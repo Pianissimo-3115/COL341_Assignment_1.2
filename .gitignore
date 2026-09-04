@@ -1,0 +1,13 @@
+# Course materials / datasets - not for public distribution (copyright)
+*.pdf
+part2_logistic_regression/drive_data/
+
+# Python
+__pycache__/
+*.pyc
+*.pkl
+*.npy
+
+# OS / editor
+.DS_Store
+Thumbs.db
