@@ -8,6 +8,13 @@ __pycache__/
 *.pkl
 *.npy
 
+# Generated run outputs (predictions/weights/loss curves from local runs)
+predictions_*.txt
+weights_*.txt
+loss_curve*.csv
+final_features*.csv
+model*.pkl
+
 # OS / editor
 .DS_Store
 Thumbs.db

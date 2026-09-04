@@ -80,7 +80,7 @@ def class_alpha(y, num_classes=NUM_CLASSES):
     return n / (num_classes * counts)
 
 
-def train(X, y, Y_onehot, method):
+def train(X, y, Y_onehot, method, snapshot_epochs=()):
     n, m = X.shape
     k = Y_onehot.shape[1]
 
@@ -105,8 +105,10 @@ def train(X, y, Y_onehot, method):
 
     rng = np.random.default_rng(SHUFFLE_SEED)
     train_losses = []
+    snapshot_epochs = set(snapshot_epochs)
+    snapshots = {}
 
-    for _ in range(EPOCHS):
+    for epoch in range(1, EPOCHS + 1):
         order = rng.permutation(n)
 
         for start in range(0, n, BATCH_SIZE):
@@ -141,8 +143,10 @@ def train(X, y, Y_onehot, method):
             b -= LR * gb / (np.sqrt(Gb) + ADAGRAD_EPS)
 
         train_losses.append(compute_reported_loss(X, y, Y_onehot, W, b, method, alpha_c))
+        if epoch in snapshot_epochs:
+            snapshots[epoch] = (W.copy(), b.copy())
 
-    return W, b, train_losses
+    return W, b, train_losses, snapshots
 
 
 def compute_reported_loss(X, y, Y_onehot, W, b, method, alpha_c):
@@ -200,7 +204,7 @@ def main():
 
     Y_train = one_hot(y_train)
 
-    W, b, _train_losses = train(X_train_std, y_train, Y_train, method)
+    W, b, _train_losses, _snapshots = train(X_train_std, y_train, Y_train, method)
 
     logits_test = X_test_std @ W + b
     P_test = stable_softmax(logits_test)

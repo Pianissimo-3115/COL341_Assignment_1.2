@@ -80,8 +80,14 @@ def cross_entropy_loss(X, Y_onehot, W, b):
     return -np.mean(np.sum(Y_onehot * np.log(P_safe), axis=1))
 
 
-def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None):
-    """Generic trainer covering all four required optimisers."""
+def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None, snapshot_epochs=()):
+    """Generic trainer covering all four required optimisers.
+
+    `snapshot_epochs`: optional iterable of 1-indexed epoch numbers after
+    which a copy of (W, b) is saved into the returned `snapshots` dict, for
+    comparing against the assignment's reference weight traces. Unused by
+    the graded CLI path (main() ignores it).
+    """
     hp = HYPERPARAMS[method]
     n, m = X.shape
     k = Y_onehot.shape[1]
@@ -97,8 +103,10 @@ def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None):
 
     train_losses = []
     val_losses = []
+    snapshot_epochs = set(snapshot_epochs)
+    snapshots = {}
 
-    for _ in range(hp["epochs"]):
+    for epoch in range(1, hp["epochs"] + 1):
         order = rng.permutation(n) if hp["shuffle"] else np.arange(n)
 
         for start in range(0, n, batch_size):
@@ -127,8 +135,10 @@ def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None):
         train_losses.append(cross_entropy_loss(X, Y_onehot, W, b))
         if X_val is not None:
             val_losses.append(cross_entropy_loss(X_val, Y_onehot_val, W, b))
+        if epoch in snapshot_epochs:
+            snapshots[epoch] = (W.copy(), b.copy())
 
-    return W, b, train_losses, val_losses
+    return W, b, train_losses, val_losses, snapshots
 
 
 def write_weights(path, W, b):
@@ -176,7 +186,7 @@ def main():
         X_val_std = apply_standardizer(X_val, mean, std)
         Y_val = one_hot(y_val)
 
-    W, b, train_losses, val_losses = train(X_train_std, Y_train, method, X_val_std, Y_val)
+    W, b, train_losses, val_losses, _snapshots = train(X_train_std, Y_train, method, X_val_std, Y_val)
 
     logits_test = X_test_std @ W + b
     P_test = stable_softmax(logits_test)
