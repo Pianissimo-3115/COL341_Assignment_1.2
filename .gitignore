@@ -14,6 +14,15 @@ weights_*.txt
 loss_curve*.csv
 final_features*.csv
 model*.pkl
+feats_*.csv
+*.png
+
+# Synthetic Part (c) datasets produced by dev/make_synthetic_partc_data.py
+synth_*/
+raw_signals/
+
+# Local scratch
+temp
 
 # OS / editor
 .DS_Store
