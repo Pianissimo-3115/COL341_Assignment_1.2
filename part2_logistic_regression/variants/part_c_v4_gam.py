@@ -670,6 +670,10 @@ def extract_raw_features(df, dataset_dir, feature_names, time_budget=RAW_TIME_BU
     index = {name: j for j, name in enumerate(feature_names)}
     started = time.time()
     done = 0
+    total = sum(len(v) for v in wanted.values())
+    last_report = started
+    print(f"raw features: extracting {total} windows from {len(wanted)} "
+          f"patient files", file=sys.stderr, flush=True)
     for path, rows in wanted.items():
         if time.time() - started > time_budget:
             print(f"raw-feature time budget hit after {done} windows",
@@ -696,9 +700,19 @@ def extract_raw_features(df, dataset_dir, feature_names, time_budget=RAW_TIME_BU
                 if j is not None and np.isfinite(value):
                     out[df_row, j] = value
             done += 1
+            # Report periodically: a whole split can take minutes, and silence
+            # for that long is indistinguishable from a hang.
+            if time.time() - last_report >= 15.0:
+                el = time.time() - started
+                rate = done / max(el, 1e-9)
+                eta = (total - done) / max(rate, 1e-9)
+                print(f"  raw features: {done}/{total} windows, {el:.0f}s "
+                      f"elapsed, {rate:.0f}/s, ~{eta:.0f}s left",
+                      file=sys.stderr, flush=True)
+                last_report = time.time()
         del signals
     print(f"raw features: {done}/{len(df)} windows in "
-          f"{time.time() - started:.1f}s", file=sys.stderr)
+          f"{time.time() - started:.1f}s", file=sys.stderr, flush=True)
     return out
 
 
