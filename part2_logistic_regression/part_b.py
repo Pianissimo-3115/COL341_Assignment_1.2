@@ -1,14 +1,3 @@
-"""
-COL774 Assignment 1.2, Part (b) - class imbalance.
-
-    python3 part_b.py part_ab_train.csv part_ab_test_public.csv baseline \
-        predictions_baseline.txt weights_baseline.txt
-
-methods: baseline | classweight | classweight2 | focal
-
-All four use the mini-batch AdaGrad settings from Part (a), so the only thing
-that differs between them is how the loss weights each example.
-"""
 import sys
 
 import numpy as np
@@ -17,16 +6,15 @@ import pandas as pd
 K = 3
 META_COLS = {"release_id", "label"}
 
-# fixed AdaGrad protocol from part (a)
 EPOCHS = 200
 LR = 0.3
 BATCH = 32
 EPS = 1e-8
 SEED = 774
 
-POWER2 = 0.3            # classweight2 uses alpha ** 0.3
-GAMMA = 2.0             # focal
-ALPHA_POW = 0.5         # focal uses alpha ** 0.5
+POWER2 = 0.3
+GAMMA = 2.0
+ALPHA_POW = 0.5
 PCLIP = (1e-12, 1 - 1e-12)
 
 METHODS = ("baseline", "classweight", "classweight2", "focal")
@@ -64,7 +52,7 @@ def softmax(Z):
     return E / E.sum(axis=1, keepdims=True)
 
 
-stable_softmax = softmax        # the report scripts import this name
+stable_softmax = softmax
 
 
 def class_alpha(y, k=K):
@@ -118,7 +106,6 @@ def train(X, y, Y, method, snapshot_epochs=()):
                 gW = Xb.T @ Rw / idx.shape[0]
                 gb = Rw.sum(axis=0) / idx.shape[0]
             else:
-                # weights inside the batch sum to 1
                 wb = weight[idx]
                 Rw = R * (wb / wb.sum())[:, None]
                 gW = Xb.T @ Rw
@@ -150,7 +137,6 @@ def reported_loss(X, y, W, b, method, alpha):
     return np.sum(w * -np.log(pt)) / np.sum(w)
 
 
-# kept for anything importing the old name
 compute_reported_loss = reported_loss
 
 

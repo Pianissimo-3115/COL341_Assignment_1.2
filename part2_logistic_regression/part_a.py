@@ -1,22 +1,10 @@
-"""
-COL774 Assignment 1.2, Part (a) - multinomial logistic regression trained with
-four gradient descent variants.
-
-    python3 part_a.py part_ab_train.csv part_ab_test_public.csv full_batch \
-        predictions_full_batch.txt weights_full_batch.txt
-
-methods: full_batch | mini_batch | sgd | adagrad
-
-Two extra optional args (val.csv, loss_curve.csv) dump the loss curve used for
-the report plots. The grader never passes them.
-"""
 import sys
 import time
 
 import numpy as np
 import pandas as pd
 
-K = 3                                   # classes: N, A, O
+K = 3
 META_COLS = {"release_id", "label"}
 SEED = 774
 
@@ -55,14 +43,12 @@ def one_hot(y, k=K):
 
 
 def softmax(Z):
-    # subtract the row max, then clip, before exponentiating
     Z = Z - Z.max(axis=1, keepdims=True)
     Z = np.clip(Z, -60.0, 0.0)
     E = np.exp(Z)
     return E / E.sum(axis=1, keepdims=True)
 
 
-# kept under the old name too - the report scripts import it
 stable_softmax = softmax
 
 
@@ -104,8 +90,8 @@ def train(X, Y, method, X_val=None, Y_val=None, snapshot_epochs=()):
             Xb, Yb = X[idx], Y[idx]
 
             P = softmax(Xb @ W + b)
-            R = P - Yb                          # residual
-            gW = Xb.T @ R / idx.shape[0]        # divide by this batch's size
+            R = P - Yb
+            gW = Xb.T @ R / idx.shape[0]
             gb = R.sum(axis=0) / idx.shape[0]
 
             if cfg["ada"]:
@@ -166,7 +152,7 @@ def main():
     W, b, tr_loss, va_loss, _, secs = train(Xtr, Ytr, method, Xva, Yva)
 
     write_rows(pred_path, softmax(Xte @ W + b))
-    write_rows(weight_path, np.vstack([b, W]))   # bias first, then the 78 rows
+    write_rows(weight_path, np.vstack([b, W]))
 
     if curve_path:
         with open(curve_path, "w") as f:
