@@ -25,6 +25,32 @@ up without re-deriving everything.
 
 **https://github.com/Pianissimo-3115/COL341_Assignment_1.2** — public, code-only.
 
+### Kaggle auto-sync
+
+Every push to `master` mirrors the code to the Kaggle dataset
+**https://www.kaggle.com/datasets/nihalpopat/col341-assignment-1-2** (private), via
+`.github/workflows/kaggle.yml`. Attach that dataset to a Kaggle notebook and the
+code there is always current. The Actions tab also has a **Run workflow** button
+for a manual sync.
+
+Ported from the Part 1 repo (`COL341_assignment_1`), with two changes that repo's
+version did not need:
+- this repo's default branch is `master`, not `main` — a verbatim copy would never
+  have fired;
+- the code lives in a subdirectory, and the Kaggle CLI **skips directories by
+  default** (`--dir-mode` defaults to `skip`), so uploading the repo root would have
+  published only the top-level files *and still reported success*. The workflow
+  stages the files it wants into one flat directory and uploads that.
+
+Staging explicitly is also what keeps the assignment PDF and `drive_data/` off
+Kaggle by construction. 13 files are published: `part_a.py`, `part_b.py`,
+`part_c.py`, the five `part_c_v*.py` versions, `verify_weights.py`, the two `dev/`
+scripts, `COMMANDS.md` and `VERSIONS.md`.
+
+Auth is the repo secret `KAGGLE_API_TOKEN` — the **single token string** from
+https://www.kaggle.com/settings/api ("Generate New Token"), *not* the contents of
+`kaggle.json`. Already set.
+
 Contains exactly: `part_a.py`, `part_b.py`, `part_c.py`, `verify_weights.py`,
 `.gitignore` (from `part2_logistic_regression/`).
 
