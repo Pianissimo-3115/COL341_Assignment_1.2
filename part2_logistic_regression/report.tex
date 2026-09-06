@@ -11,10 +11,12 @@
 % 0.45\textwidth, cut the Part (b) closing sentence about AF precision, then
 % shorten the Part (c) feature bullet list.
 %
-% Parts (a) and (b) below are REAL, measured on part_ab_train.csv /
-% part_ab_val.csv. Part (c) items are marked \TODO and must be filled from
-%   python dev/run_report_pipeline.py skip <partc_dataset_dir> out/
-% run against the real Kaggle competition data.
+% All numbers are REAL measurements: Parts (a)/(b) on part_ab_train.csv /
+% part_ab_val.csv, Part (c) on the Kaggle competition data (baseline model,
+% i.e. variants/part_c_v1_baseline.py, which part_c.py is a copy of).
+%
+% ONLY REMAINING EDIT: the entry numbers on the title line - they were carried
+% over from the Part 1 report and must be checked.
 \documentclass[10pt,a4paper]{article}
 \usepackage[margin=1.6cm]{geometry}
 \usepackage{booktabs}
@@ -186,9 +188,36 @@ test row must still receive a prediction.
 
 \textbf{(i) Top 10 features and how they were ranked.} Because every column is
 standardised before the logistic layer, the fitted coefficients are directly
-comparable, so features are ranked by $|w_j|$ --- the amount by which a
-one-standard-deviation change in that column moves the log-odds of AF.
-\TODO{Paste the top-10 table.}
+comparable, so features are ranked by $|w_j|$ --- how far a one-standard-deviation
+change in that column moves the log-odds of AF.
+
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}rlr@{\hskip 20pt}rlr@{}}
+\toprule
+\# & \textbf{Feature} & $w_j$ & \# & \textbf{Feature} & $w_j$ \\
+\midrule
+1 & \feat{p\_wave\_corr\_coeff\_median}      & $-0.686$ & 6  & \feat{full\_waveform\_median}    & $-0.367$ \\
+2 & \feat{rr\_sampen}                        & $+0.448$ & 7  & \feat{s\_wave\_amp}              & $-0.328$ \\
+3 & \feat{pri\_approximate\_entropy}         & $-0.435$ & 8  & \feat{p\_wave\_corr\_coeff\_std} & $+0.323$ \\
+4 & \feat{rri\_multiscale\_entropy}          & $+0.423$ & 9  & \feat{pnn400}                    & $-0.303$ \\
+5 & \feat{p\_wave\_higuchi\_fractal\_median} & $-0.391$ & 10 & \feat{t\_wave\_eng}              & $+0.294$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The ranking is a sanity check on the whole pipeline, because it recovers the two
+textbook clinical criteria for AF without being told them. Four of the top ten
+describe the P wave, led by \feat{p\_wave\_corr\_coeff\_median} --- how
+reproducible the P-wave shape is from beat to beat --- with a large
+\emph{negative} weight: the less consistent the P wave, the more AF-like. That is
+the ``absent or chaotic P wave'' criterion. Three more measure RR irregularity
+(\feat{rr\_sampen}, \feat{rri\_multiscale\_entropy},
+\feat{pri\_approximate\_entropy}), all with signs saying more irregular means
+more AF: the ``irregularly irregular rhythm'' criterion. Notably
+\feat{p\_wave\_corr\_coeff\_std} enters with a \emph{positive} weight alongside
+its median's negative one, so the model is using both the level and the
+variability of P-wave consistency.
 
 \textbf{(ii) Class imbalance.} Class weighting was treated as a hyperparameter
 rather than assumed: $\{$none, \texttt{balanced}$\}$ was searched jointly with
@@ -198,8 +227,32 @@ the opposite of the usual advice, and it follows from the metric: `balanced'
 weighting inflates the minority class to raise recall, but here a false positive
 costs $100\times$ what a true positive earns, so buying recall at the price of
 specificity is exactly the wrong trade --- the same trade that \emph{helped} in
-Part (b), where the metric was balanced accuracy. \TODO{Paste the
-none-vs-balanced comparison table.}
+Part (b), where the metric was balanced accuracy.
+
+The imbalance is therefore handled by \emph{cost-sensitive thresholding} rather
+than by reweighting the loss: moving the cut from the default $0.5$ to the
+selected $0.8887$ is what adapts the model to a $100{:}1$ error cost. Measured on
+\texttt{val.csv} (patient $51$ excluded, see below), that move improves every
+quantity that matters here and costs only recall:
+
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Threshold} & \textbf{M} & \textbf{TP} & \textbf{FP} & \textbf{Recall}
+& \textbf{FPR} & \textbf{AP} \\
+\midrule
+$0.5$ (default)  & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
+$0.8887$ (chosen) & $\mathbf{0.6378}$ & $2115$ & $\mathbf{13}$ & $0.7387$ & $\mathbf{0.00101}$ & $0.9878$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cutting false positives from $33$ to $13$ is worth more than the $317$ true
+positives given up, which is the whole character of this metric. Average
+precision is identical at both rows because AP is threshold-free --- exactly the
+insensitivity observed in Part (b), and the reason AP alone cannot be used to
+tune an operating point.
 
 \textbf{(iii) Threshold selection.} The threshold is chosen on pooled
 patient-grouped out-of-fold predictions on \texttt{train.csv} together with the
@@ -239,13 +292,51 @@ above: $\alpha P/(N+\alpha P)$ increases monotonically in $\alpha$, so a harsher
 penalty demands more confidence before calling AF; and once the threshold is high
 enough that only the few most confident windows are admitted, further increases
 in $\alpha$ cannot remove the remaining false positives, so $M$ decreases at a
-rate set by the residual FPR. \TODO{Confirm against your plot.}
+rate set by the residual FPR. The sweep here is computed on the full validation
+set, so the achievable $M$ is already negative over most of the range --- with
+$\mathrm{FPR} = 0.0335$ at the chosen cut, the penalty term $\alpha\,
+\mathrm{FPR}$ passes the maximum attainable recall of $1$ as soon as
+$1/\epsilon \gtrsim 30$, and no threshold satisfying the $\mathrm{TPR} \ge 0.1$
+eligibility floor escapes it. That is the same patient-$51$ effect seen in the
+table above, viewed as a function of the penalty rather than of the threshold.
 
-\textbf{(iv) Final metrics of the submitted model.} \TODO{Paste the val.csv
-table: M, TP, FP, AF recall, AF FPR at the chosen threshold 0.8887 and at 0.5.}
-For reference the pooled (grouped out-of-fold train $+$ val) operating point at
-the chosen threshold is $M = 0.6351$, $\mathrm{TP}=9622$, $\mathrm{FP}=56$,
-recall $0.7380$, FPR $0.0011$.
+\textbf{(iv) Final metrics of the submitted model, and one noisy patient.}
+
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+\textbf{Population} & \textbf{Threshold} & \textbf{M} & \textbf{TP} & \textbf{FP}
+& \textbf{AF recall} & \textbf{AF FPR} & \textbf{AP} \\
+\midrule
+\texttt{val.csv}, patient 51 excluded & $0.8887$ (chosen) & $\mathbf{0.6378}$ & $2115$ & $13$ & $0.7387$ & $0.00101$ & $0.9878$ \\
+\texttt{val.csv}, patient 51 excluded & $0.5$             & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
+\texttt{val.csv}, all rows            & $0.8887$ (chosen) & $-2.5683$ & $2893$ & $450$ & $0.7846$ & $0.03353$ & $0.9109$ \\
+\texttt{val.csv}, all rows            & $0.5$             & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0.04009$ & $0.9109$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two populations differ by $3.2$ in $M$, and essentially all of it is one
+patient. Of the $450$ false positives on the full validation set, $437$ come from
+patient $51$ alone: that patient contributes $547$ non-AF windows and $437$ of
+them are called AF, a $\mathbf{80\%}$ false-positive rate against
+$\mathbf{0.10\%}$ for the other eleven validation patients combined. This is the
+``systematic outlier patient'' case the assignment points at, and out-of-fold
+predictions localise it immediately.
+
+It is not purely a threshold artefact. Average precision falls from $0.9878$ to
+$0.9109$ when patient $51$ is included, and AP does not depend on the threshold
+at all --- so the model genuinely \emph{ranks} that patient's non-AF windows as
+AF-like, and no choice of cut-off can fully recover it. We report both rows
+rather than only the favourable one, because the honest reading is that
+$M = 0.6378$ is the score conditional on the evaluation set containing no
+patient of this kind, and a single such patient would dominate the result. The
+mitigation actually available within a linear model is better features: a second
+pipeline adding signal-quality descriptors from the raw waveform was built for
+exactly this failure mode --- noisy recordings whose spurious QRS detections
+imitate an irregular rhythm --- and is included in the repository, though it was
+not selected for submission here.
 
 %======================================================================
 \section*{Disclosure}
