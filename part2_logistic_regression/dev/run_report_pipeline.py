@@ -104,7 +104,7 @@ def run_part_a(part_ab_dir, out_dir, lines):
         })
         print(f"[part a] {method}: {len(tr)} epochs in {secs[-1]:.2f}s "
               f"(wall {wall:.2f}s), val min {min(va):.4f} @ epoch {best_epoch}",
-              file=sys.stderr)
+              file=sys.stderr, flush=True)
 
     flat = []
     for method, (secs, tr, va) in curves.items():
@@ -206,7 +206,7 @@ def run_part_b(part_ab_dir, lines):
         })
         print(f"[part b] {method}: macroAP={rows[-1]['macro_ap']:.4f} "
               f"balAcc={rows[-1]['bal_acc']:.4f} "
-              f"AF recall={rows[-1]['recall'][1]:.4f}", file=sys.stderr)
+              f"AF recall={rows[-1]['recall'][1]:.4f}", file=sys.stderr, flush=True)
 
     lines.append("## Part (b) — class imbalance\n")
     lines.append(f"Training class counts: N={counts[0]}, A(AF)={counts[1]}, "
@@ -271,7 +271,13 @@ def fit_version(mod, name, X_train, y_train, groups, n_given):
 
 
 def run_part_c(dataset_dir, out_dir, lines, only=None, fast=False):
+    t0 = time.perf_counter()
+    print(f"[part c] reading {dataset_dir}", file=sys.stderr, flush=True)
     train_df = pd.read_csv(Path(dataset_dir) / "train.csv")
+    print(f"[part c] train.csv {train_df.shape} in "
+          f"{time.perf_counter() - t0:.1f}s; raw_signals/="
+          f"{(Path(dataset_dir) / 'raw_signals').is_dir()}",
+          file=sys.stderr, flush=True)
     val_path = Path(dataset_dir) / "val.csv"
     if not val_path.exists():
         lines.append("## Part (c)\n\n*Skipped: val.csv not found, so no version "
@@ -311,9 +317,14 @@ def run_part_c(dataset_dir, out_dir, lines, only=None, fast=False):
         Xva = mod.build_matrix(va, feature_cols, dataset_dir, raw_names, use_raw) \
             if hasattr(mod, "build_matrix") else va[feature_cols].to_numpy(float)
 
+        print(f"[part c] {label}: features {Xtr.shape} train / {Xva.shape} val, "
+              f"fitting feature map...", file=sys.stderr, flush=True)
         phi_fn, extra = fit_version(mod, label, Xtr, y_tr, groups, n_given)
         phi_tr, phi_va = phi_fn(Xtr), phi_fn(Xva)
 
+        print(f"[part c] {label}: phi={phi_tr.shape}, tuning "
+              f"({len(mod.C_GRID) * len(mod.CLASS_WEIGHT_GRID)} configs x "
+              f"{mod.N_FOLDS} folds)...", file=sys.stderr, flush=True)
         c, cw, cv_m = mod.tune_hyperparameters(phi_tr, y_tr, groups)
         model = mod.make_model(c, cw)
         model.fit(phi_tr, y_tr)
@@ -333,7 +344,7 @@ def run_part_c(dataset_dir, out_dir, lines, only=None, fast=False):
                             FP_half=fp5, recall_half=tpr5, fpr_half=fpr5,
                             chose=extra.get("chose", "")))
         print(f"[part c] {label}: d={phi_tr.shape[1]} val M={m_at:.4f} "
-              f"(TP={tp} FP={fp})", file=sys.stderr)
+              f"(TP={tp} FP={fp})", file=sys.stderr, flush=True)
 
         if m_at > best_m:
             best_m, best_name = m_at, label
@@ -461,7 +472,7 @@ def main():
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     if only or fast:
-        print(f"versions={only or 'all'} fast={fast}", file=sys.stderr)
+        print(f"versions={only or 'all'} fast={fast}", file=sys.stderr, flush=True)
 
     lines = ["# Report data", "",
              f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
@@ -475,7 +486,7 @@ def main():
     (out_dir / "REPORT_DATA.md").write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
     print(f"\nwrote {out_dir/'REPORT_DATA.md'} and the figures beside it",
-          file=sys.stderr)
+          file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
