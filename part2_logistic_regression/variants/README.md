@@ -14,22 +14,29 @@ is scored the same way: `sigmoid(phi(x) . weights + bias) >= threshold`.
 
 ## Commands
 
-Run from `part2_logistic_regression/`. Use `python` locally — `python3` resolves
-to the Windows Store stub on this machine.
+Run from `part2_logistic_regression/`. These are the assignment's own Part (c)
+interface — `python3 part_c.py dataset_dir/ model.pkl final_features.csv` — with
+only the script filename changed:
 
 ```bash
-python variants/part_c_v1_baseline.py dataset_dir/ model_v1.pkl final_features_v1.csv
-python variants/part_c_v2_selected.py dataset_dir/ model_v2.pkl final_features_v2.csv
-python variants/part_c_v3_raw.py      dataset_dir/ model_v3.pkl final_features_v3.csv
-python variants/part_c_v4_gam.py      dataset_dir/ model_v4.pkl final_features_v4.csv
-python variants/part_c_v5_auto.py     dataset_dir/ model_v5.pkl final_features_v5.csv
+python3 variants/part_c_v1_baseline.py dataset_dir/ model.pkl final_features.csv
+python3 variants/part_c_v2_selected.py dataset_dir/ model.pkl final_features.csv
+python3 variants/part_c_v3_raw.py      dataset_dir/ model.pkl final_features.csv
+python3 variants/part_c_v4_gam.py      dataset_dir/ model.pkl final_features.csv
+python3 variants/part_c_v5_auto.py     dataset_dir/ model.pkl final_features.csv
 ```
 
-Compare them on val, then build the Kaggle submission from the winner:
+Substitute `python` when running on this machine (`python3` is the Windows Store
+stub here). The output paths are ordinary arguments, so give them distinct names
+when comparing versions instead of overwriting one file.
+
+Compare on val, then submit the winner under the required name:
 
 ```bash
 python dev/partc_report.py dataset_dir/ report_out/ raw   # table (iv) = val metrics
-python drive_data/partc_kaggle.py model_v3.pkl final_features_v3.csv submission.csv
+cp variants/part_c_v3_raw.py part_c.py
+python3 part_c.py dataset_dir/ model.pkl final_features.csv
+python3 partc_kaggle.py model.pkl final_features.csv submission.csv
 ```
 
 See [`../COMMANDS.md`](../COMMANDS.md) for the full reference, including Parts
