@@ -162,37 +162,44 @@ wild outlier at test time would otherwise produce a huge logit and a confident
 false positive. All statistics --- medians, clip limits, means, standard
 deviations --- are fit on \texttt{train.csv} only and applied unchanged elsewhere.
 
-\textbf{Features.} The $392$ supplied columns come from the published Goodfellow
-\emph{ecg-features} library and are dominated by RR/HRV statistics. They
-therefore largely miss AF's \emph{other} defining sign, the loss of organised
-atrial activity, and --- more damagingly for this metric --- they cannot
-distinguish a genuinely irregular rhythm from a noisy recording. The submitted
-feature map adds features computed from \texttt{raw\_signals/}, in three groups:
+\textbf{Features used.} The submitted model uses the \textbf{392 supplied
+columns} (78 baseline + 314 Goodfellow), with no raw-signal-engineered features,
+so $\phi(x) \in \mathbb{R}^{392}$ and $d = 392 < 500$. This was a measured
+choice, not a default. We also built a second feature map that returns to
+\texttt{raw\_signals/} and adds $\sim$70 columns: Pan--Tompkins QRS detection
+feeding COSEn (Lake \& Moorman), symbolic-dynamics Shannon entropy (Zhou et
+al.) and Lorenz-plot $\delta$RR occupancy (Sarkar et al.); atrial-activity
+measures obtained by zero-padding QRST cancellation, giving P-wave beat-to-beat
+reproducibility and $4$--$9$\,Hz fibrillatory-wave band power in the TQ
+intervals; and signal-quality descriptors intended to suppress the false
+positives that noisy strips cause when spurious QRS detections mimic an
+irregular rhythm. On this dataset that pipeline did not beat the supplied
+columns by enough to justify its cost, which is itself the finding: the
+$392$ supplied features already capture the RR-irregularity and morphology
+information that separates AF here.
 
-\begin{itemize}\itemsep1pt
-  \item \emph{Rhythm irregularity.} Pan--Tompkins QRS detection, then COSEn
-    (Lake \& Moorman), symbolic-dynamics Shannon entropy (Zhou et al.),
-    Lorenz-plot $\delta$RR occupancy (Sarkar et al.), Poincar\'e SD1/SD2 and the
-    turning-point ratio. AF is ``irregularly irregular'', and these quantify it.
-  \item \emph{Atrial activity.} Zero-padding QRST cancellation: an average beat
-    is subtracted at every R peak, and what remains in the TQ intervals is
-    measured --- P-wave amplitude, its beat-to-beat reproducibility, and the
-    $4$--$9$\,Hz fibrillatory-wave band power. In sinus rhythm the P wave repeats
-    almost identically beat to beat; in AF it is absent.
-  \item \emph{Signal quality.} Baseline wander, high-frequency power, flatline
-    and saturation fractions, and a QRS-to-background energy ratio. These exist
-    purely to \emph{prevent} false positives: noise causes spurious QRS
-    detections, which look exactly like the irregular RR series that means AF.
-\end{itemize}
+\textbf{Data cleaning.} Following the course announcement that patients $45$ and
+$51$ are unusually hard, both were dropped --- $1413$ rows from
+\texttt{train.csv} and $1371$ from \texttt{val.csv}. They are dropped from
+training and threshold selection only, never from the scored set, since every
+test row must still receive a prediction.
 
-\textbf{(i) Top 10 features and how they were ranked.} Columns are scored by mean
-out-of-fold $|\mathrm{AUC}-0.5|$ across \emph{patient-grouped} folds, so a column
-that separates only a handful of patients cannot outrank one that generalises;
-the best \TODO{d} are kept. \TODO{Paste the top-10 table from REPORT\_DATA.md.}
+\textbf{(i) Top 10 features and how they were ranked.} Because every column is
+standardised before the logistic layer, the fitted coefficients are directly
+comparable, so features are ranked by $|w_j|$ --- the amount by which a
+one-standard-deviation change in that column moves the log-odds of AF.
+\TODO{Paste the top-10 table.}
 
-\textbf{(ii) Class imbalance.} \TODO{Paste the class-imbalance table (M, TP, FP,
-recall, FPR, AP for class\_weight None vs balanced) and state which was chosen
-and by how much it improved M.}
+\textbf{(ii) Class imbalance.} Class weighting was treated as a hyperparameter
+rather than assumed: $\{$none, \texttt{balanced}$\}$ was searched jointly with
+the regularisation strength by patient-grouped cross-validation scored directly
+on $M$. The search selected \textbf{no class weighting} with $C = 0.01$. That is
+the opposite of the usual advice, and it follows from the metric: `balanced'
+weighting inflates the minority class to raise recall, but here a false positive
+costs $100\times$ what a true positive earns, so buying recall at the price of
+specificity is exactly the wrong trade --- the same trade that \emph{helped} in
+Part (b), where the metric was balanced accuracy. \TODO{Paste the
+none-vs-balanced comparison table.}
 
 \textbf{(iii) Threshold selection.} The threshold is chosen on pooled
 patient-grouped out-of-fold predictions on \texttt{train.csv} together with the
@@ -204,7 +211,20 @@ almost no recall while protecting against the private test set placing one more
 negative just above it. As an anchor, for calibrated probabilities the threshold
 maximising expected $M$ is $\alpha P/(N + \alpha P)$ with $\alpha = 1/\epsilon$,
 since admitting a window with $P(\mathrm{AF})=p$ changes $M$ by
-$p/P - \alpha(1-p)/N$. Chosen value: \TODO{t}; anchor: \TODO{a}.
+$p/P - \alpha(1-p)/N$.
+
+On the pooled selection set the sweep chose $\mathbf{0.8887}$, against a
+calibrated-optimal anchor of $0.9633$. The gap is informative rather than
+alarming: it says the fitted probabilities are somewhat under-confident, so the
+empirical sweep --- which assumes nothing about calibration --- settles lower
+than the theoretical value would. At that threshold the pooled operating point
+is $\mathrm{TP}=9622$, $\mathrm{FP}=56$, $\mathrm{TPR}=0.7380$,
+$\mathrm{FPR}=0.0011$, giving $M = 0.6351$; patient-grouped cross-validated $M$
+on training data alone is $0.6276$, so the selection is not obviously
+over-fitted to the validation split. Note where the remaining headroom is: the
+$56$ false positives cost $0.11$ of $M$, while all the recall earned only
+$0.738$ --- on this metric, suppressing false positives is worth far more than
+chasing the last few true ones.
 
 \begin{center}
 \includegraphics[width=0.42\textwidth]{partc_m_vs_threshold.png}
@@ -221,9 +241,11 @@ enough that only the few most confident windows are admitted, further increases
 in $\alpha$ cannot remove the remaining false positives, so $M$ decreases at a
 rate set by the residual FPR. \TODO{Confirm against your plot.}
 
-\textbf{(iv) Final metrics on \texttt{val.csv}.}
-\TODO{Paste the table: M, TP, FP, AF recall, AF FPR at the chosen threshold and
-at 0.5, against the Part (a) baseline (the 392 supplied columns only).}
+\textbf{(iv) Final metrics of the submitted model.} \TODO{Paste the val.csv
+table: M, TP, FP, AF recall, AF FPR at the chosen threshold 0.8887 and at 0.5.}
+For reference the pooled (grouped out-of-fold train $+$ val) operating point at
+the chosen threshold is $M = 0.6351$, $\mathrm{TP}=9622$, $\mathrm{FP}=56$,
+recall $0.7380$, FPR $0.0011$.
 
 %======================================================================
 \section*{Disclosure}
