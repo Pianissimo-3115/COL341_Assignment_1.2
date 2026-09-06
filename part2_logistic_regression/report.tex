@@ -1,59 +1,44 @@
 % COL774 Assignment 1.2 -- report  (Part 2: Logistic Regression)
 %
-% Compile: pdflatex report.tex     (packages: geometry, booktabs, amsmath,
-%          graphicx, xcolor). The four figures must sit next to this file:
-%              cp <out_dir>/*.png .
-%          where <out_dir> is what run_report_pipeline.py wrote.
-%
-% HARD LIMIT: 4 pages including figures and tables. This has NOT been compiled
-% (no LaTeX toolchain on the dev machine), so check the page count on the first
-% build. If it runs over, trim in this order: shrink the two Part (a) figures to
-% 0.45\textwidth, cut the Part (b) closing sentence about AF precision, then
-% shorten the Part (c) feature bullet list.
-%
-% All numbers are REAL measurements: Parts (a)/(b) on part_ab_train.csv /
-% part_ab_val.csv, Part (c) on the Kaggle competition data (baseline model,
-% i.e. variants/part_c_v1_baseline.py, which part_c.py is a copy of).
-%
+% Compile: pdflatex report.tex   (geometry, booktabs, amsmath, graphicx)
+% The four PNGs must sit next to this file.
 % Submit as: 2023CS10058_2023CS10552.zip
 %     python dev/make_submission.py 2023CS10058 2023CS10552
+%
+% All numbers are real measurements: Parts (a)/(b) on part_ab_train/val.csv,
+% Part (c) on the Kaggle competition data with the baseline model (part_c.py).
 \documentclass[10pt,a4paper]{article}
-\usepackage[margin=1.6cm]{geometry}
+\usepackage[margin=1.5cm]{geometry}
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage[T1]{fontenc}
 \usepackage{graphicx}
-\usepackage{xcolor}
 
-\setlength{\parskip}{1.5pt}
-\setlength{\textfloatsep}{6pt}
-\setlength{\intextsep}{6pt}
+\setlength{\parskip}{2pt}
+\setlength{\textfloatsep}{5pt}
+\setlength{\intextsep}{5pt}
 \setlength{\parindent}{0pt}
 \newcommand{\feat}[1]{\texttt{\small #1}}
-\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
 \pagestyle{empty}
 
 \begin{document}
 
 \begin{center}
-  {\Large\bfseries COL774 Assignment 1.2 --- Report}\\[2pt]
+  {\large\bfseries COL774 Assignment 1.2 --- Report}\\[1pt]
   {\small Popat Nihal Alkesh (2023CS10058) \qquad Viraaj Narolia (2023CS10552)}
 \end{center}
-\vspace{-4pt}\hrule\vspace{8pt}
+\vspace{-2pt}\hrule\vspace{6pt}
 
 %======================================================================
 \section*{Part (a) --- Gradient-descent variants}
 
-Both plots put loss against \emph{wall-clock training time} rather than epochs,
-because one epoch means something different for each method: full-batch takes a
-single update per epoch while SGD takes $n$, so equal epoch counts are not equal
-work. Loss evaluation is excluded from the clock, since it is reporting rather
-than training.
+Loss is plotted against \emph{wall-clock training time}, not epochs: full-batch
+takes one update per epoch and SGD takes $n$, so equal epochs are not equal work.
 
 \begin{center}
-\includegraphics[width=0.49\textwidth]{parta_train_loss_vs_time.png}
+\includegraphics[width=0.47\textwidth]{parta_train_loss_vs_time.png}
 \hfill
-\includegraphics[width=0.49\textwidth]{parta_val_loss_vs_time.png}
+\includegraphics[width=0.47\textwidth]{parta_val_loss_vs_time.png}
 \end{center}
 
 \begin{table}[h]
@@ -66,45 +51,33 @@ than training.
 Full-batch GD      & 500 & 0.59 & 0.4793 & 0.5339 & 0.5339 & 500 \\
 Mini-batch GD      & 200 & 0.64 & 0.4652 & 0.5301 & 0.5281 & 72  \\
 SGD                & 30  & 2.22 & 0.4857 & 0.5350 & 0.5350 & 30  \\
-Mini-batch AdaGrad & 200 & 0.76 & 0.4626 & 0.5286 & 0.5265 & 193 \\
+Mini-batch AdaGrad & 200 & 0.76 & \textbf{0.4626} & \textbf{0.5286} & \textbf{0.5265} & 193 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Which method reduces the loss fastest.} The three batched methods all
-finish in well under a second and their totals differ by less than run-to-run
-timing noise, so the informative comparison is the \emph{shape} of the curves,
-not the totals. Per unit of time mini-batch GD and AdaGrad are clearly ahead:
-both are below $0.60$ validation loss within roughly $10$\,ms, a level
-full-batch GD does not reach until about $0.2$\,s and SGD not until about
-$0.5$\,s. The reason is updates per unit of arithmetic --- one pass over the data
-buys full-batch a single step but buys mini-batch $n/32 \approx 135$, so
-full-batch does the same work to move the parameters far less. AdaGrad and
-mini-batch are nearly indistinguishable early, but AdaGrad's per-coordinate
-scaling lets it settle at the lowest final loss of the four ($0.4626$ train,
-$0.5286$ val); its advantage appears late, once the raw gradient has shrunk and a
-fixed step size becomes too small. SGD is the one unambiguous outlier in
-wall-clock terms: at batch size $1$ it performs $n$ Python-level iterations per
-epoch, so per-update overhead dominates and $30$ epochs cost $2.22$\,s, several
-times any other method despite being the fewest epochs.
+\textbf{Fastest.} Mini-batch and AdaGrad reach $0.60$ validation loss in about
+$10$\,ms; full-batch needs $\sim0.2$\,s and SGD $\sim0.5$\,s. One pass buys
+full-batch a single step but buys mini-batch $n/32 \approx 135$, so it does the
+same arithmetic to move the parameters far less. AdaGrad matches mini-batch early
+and ends lowest on both losses, its per-coordinate scaling paying off late once
+the raw gradient has shrunk. SGD is slowest in wall-clock terms despite the
+fewest epochs: at batch size $1$ it runs $n$ Python-level iterations per epoch,
+so per-update overhead dominates. The three batched methods' totals differ by
+less than timing noise, so the curve shape is the meaningful comparison.
 
-\textbf{When each model starts to overfit.} Overfitting shows as validation loss
-turning upward while training loss keeps falling. Mini-batch GD reaches its
-minimum validation loss of $0.5281$ at epoch $72$ (of $200$) and drifts up
-afterwards, so it overfits for roughly the last two thirds of its schedule.
-AdaGrad bottoms out at $0.5265$ at epoch $193$ (of $200$), i.e.\ it is essentially
-still improving when the prescribed schedule ends. Full-batch GD and SGD never
-turn: their minima coincide with their final epochs, so within the prescribed
-budgets they are under-trained rather than over-trained --- consistent with the
-time plot, where both are still descending when they stop.
+\textbf{Overfitting.} Mini-batch bottoms out at epoch $72$ of $200$ and rises
+after, so it overfits for two thirds of its schedule. AdaGrad bottoms at epoch
+$193$ of $200$ --- still improving when the schedule ends. Full-batch and SGD
+never turn: their minima are their final epochs, so within the prescribed budgets
+they are under-trained rather than over-trained.
 
 %======================================================================
-\section*{Part (b) --- Class imbalance: which metrics reveal the benefit}
+\section*{Part (b) --- Class imbalance}
 
-Training counts are $N{=}2723$, AF${=}366$, Other${=}1221$, so AF is outnumbered
-roughly $7{:}1$. All four models use the fixed mini-batch AdaGrad protocol, so
-any difference is attributable to the reweighting alone. Metrics on
-\texttt{part\_ab\_val.csv}:
+Counts are N${=}2723$, AF${=}366$, Other${=}1221$ ($\approx 7{:}1$ against AF).
+All four models share the fixed AdaGrad protocol, so differences are due to the
+reweighting alone. Metrics on \texttt{part\_ab\_val.csv}:
 
 \begin{table}[h]
 \centering\footnotesize
@@ -121,79 +94,46 @@ Focal ($\gamma{=}2$) & 0.7659 & 0.7403 & 0.7846 & 0.8767 & 0.7564 & 0.5878 & 0.6
 \end{tabular}
 \end{table}
 
-\textbf{Which metrics actually reflect the benefit.} Two of the four columns are
-actively misleading here. \emph{Plain accuracy gets worse} under every treatment
-($0.7998 \to 0.7738$ for full-strength weighting), because accuracy is dominated
-by the majority class and reweighting deliberately trades Normal recall
-($0.9366 \to 0.8305$) for minority recall --- so a reader tracking accuracy would
-conclude the treatments failed. \emph{Macro-AP is essentially flat}
-($0.7765 \to 0.7748 / 0.7777 / 0.7659$, i.e.\ within $\pm 0.011$), and for a
-principled reason: AP is computed from the \emph{ranking} of predicted
-probabilities, while class weighting mostly rescales the logits and shifts the
-decision boundary. Reweighting changes which side of the boundary examples fall
-on, not their relative order, so a threshold-free ranking metric is close to
-blind to it.
+\textbf{Which metrics reveal the benefit.} Two of these columns are actively
+misleading. \emph{Plain accuracy gets worse} under every treatment
+($0.7998 \to 0.7738$), because it is dominated by the majority class and
+reweighting deliberately trades Normal recall ($0.9366 \to 0.8305$) for minority
+recall. \emph{Macro-AP is flat} (within $\pm0.011$), because AP scores the
+\emph{ranking} while reweighting mainly rescales logits and shifts the decision
+boundary --- it changes which side of the boundary examples fall on, not their
+order, so a threshold-free ranking metric is nearly blind to it.
 
-What does reveal the benefit is \textbf{balanced accuracy} and
-\textbf{per-class AF recall}, both of which weight the minority class equally
-with the majority: balanced accuracy rises $0.7186 \to 0.7555$ and AF recall
-rises $0.6923 \to 0.7949$ under full-strength weighting, a $+10.3$ point gain on
-the class the task cares about. The ordering across methods is consistent:
-full-strength weighting moves the most, focal loss is intermediate
-($0.7564$ AF recall), and \texttt{classweight2} with $\alpha^{0.3}$ moves least
-($0.7308$) --- exactly as expected, since $p{=}0.3$ compresses the weights
-towards $1$ and so applies a weaker correction. The cost is AF precision, which
-falls $0.8060 \to 0.6200$: the treatments buy recall by accepting more false AF
-calls, which is the right trade only if false negatives are costlier than false
-positives --- the opposite of the regime in Part (c).
+What does show the benefit is \textbf{balanced accuracy} ($0.7186 \to 0.7555$)
+and \textbf{AF recall} ($0.6923 \to 0.7949$, $+10.3$ points), both of which weight
+the minority class equally. The ordering is consistent --- full-strength $>$ focal
+$>$ \texttt{classweight2}, whose $\alpha^{0.3}$ compresses the weights towards $1$
+and so corrects least. The cost is AF precision, $0.8060 \to 0.6200$.
 
 %======================================================================
 \section*{Part (c) --- Feature engineering for AF detection}
 
-\textbf{Why the pipeline looks the way it does.} The metric is
-$M = \mathrm{TP}/P - \mathrm{FP}/(N\epsilon)$ with $\epsilon = 1/100$, i.e.
-$M = \mathrm{TPR} - 100\,\mathrm{FPR}$. One false positive costs as much as
-$100/N$ of recall, so on a validation set with $N \approx 1000$ non-AF windows a
-single false positive burns $0.1$ of $M$ while one extra true positive buys about
-$0.01$. Every choice below follows from that asymmetry.
+The metric $M = \mathrm{TPR} - 100\,\mathrm{FPR}$ makes one false positive cost as
+much as $100/N$ of recall, and every choice below follows from that.
 
-\textbf{Preprocessing.} Missing values are median-imputed, then every feature is
-\emph{winsorised} to the training set's $[0.1\%, 99.9\%]$ quantiles before
-standardisation. Winsorising matters specifically because of the metric: a single
-wild outlier at test time would otherwise produce a huge logit and a confident
-false positive. All statistics --- medians, clip limits, means, standard
-deviations --- are fit on \texttt{train.csv} only and applied unchanged elsewhere.
+\textbf{Features and preprocessing.} $\phi(x)$ is the \textbf{392 supplied
+columns} ($d = 392 < 500$), median-imputed, winsorised to the training
+$[0.1\%, 99.9\%]$ quantiles, then standardised --- all statistics fit on
+\texttt{train.csv} only. Winsorising matters here specifically: one wild outlier
+at test time would otherwise produce a huge logit and a confident false positive.
+A second pipeline adding $\sim$70 raw-signal features (Pan--Tompkins QRS
+detection feeding COSEn, symbolic-dynamics entropy and Lorenz-plot $\delta$RR
+occupancy; P-wave and $4$--$9$\,Hz fibrillatory-wave measures via QRST
+cancellation; signal-quality descriptors) was built and tested but did not beat
+the supplied columns here, which is itself the finding. Following the course
+announcement, patients $45$ and $51$ were dropped from training and threshold
+selection ($1413$ and $1371$ rows), never from the scored set.
 
-\textbf{Features used.} The submitted model uses the \textbf{392 supplied
-columns} (78 baseline + 314 Goodfellow), with no raw-signal-engineered features,
-so $\phi(x) \in \mathbb{R}^{392}$ and $d = 392 < 500$. This was a measured
-choice, not a default. We also built a second feature map that returns to
-\texttt{raw\_signals/} and adds $\sim$70 columns: Pan--Tompkins QRS detection
-feeding COSEn (Lake \& Moorman), symbolic-dynamics Shannon entropy (Zhou et
-al.) and Lorenz-plot $\delta$RR occupancy (Sarkar et al.); atrial-activity
-measures obtained by zero-padding QRST cancellation, giving P-wave beat-to-beat
-reproducibility and $4$--$9$\,Hz fibrillatory-wave band power in the TQ
-intervals; and signal-quality descriptors intended to suppress the false
-positives that noisy strips cause when spurious QRS detections mimic an
-irregular rhythm. On this dataset that pipeline did not beat the supplied
-columns by enough to justify its cost, which is itself the finding: the
-$392$ supplied features already capture the RR-irregularity and morphology
-information that separates AF here.
-
-\textbf{Data cleaning.} Following the course announcement that patients $45$ and
-$51$ are unusually hard, both were dropped --- $1413$ rows from
-\texttt{train.csv} and $1371$ from \texttt{val.csv}. They are dropped from
-training and threshold selection only, never from the scored set, since every
-test row must still receive a prediction.
-
-\textbf{(i) Top 10 features and how they were ranked.} Because every column is
-standardised before the logistic layer, the fitted coefficients are directly
-comparable, so features are ranked by $|w_j|$ --- how far a one-standard-deviation
-change in that column moves the log-odds of AF.
+\textbf{(i) Top 10 features.} Columns are standardised, so coefficients are
+comparable and features are ranked by $|w_j|$.
 
 \begin{table}[h]
 \centering\footnotesize
-\begin{tabular}{@{}rlr@{\hskip 20pt}rlr@{}}
+\begin{tabular}{@{}rlr@{\hskip 16pt}rlr@{}}
 \toprule
 \# & \textbf{Feature} & $w_j$ & \# & \textbf{Feature} & $w_j$ \\
 \midrule
@@ -206,101 +146,17 @@ change in that column moves the log-odds of AF.
 \end{tabular}
 \end{table}
 
-The ranking is a sanity check on the whole pipeline, because it recovers the two
-textbook clinical criteria for AF without being told them. Four of the top ten
-describe the P wave, led by \feat{p\_wave\_corr\_coeff\_median} --- how
-reproducible the P-wave shape is from beat to beat --- with a large
-\emph{negative} weight: the less consistent the P wave, the more AF-like. That is
-the ``absent or chaotic P wave'' criterion. Three more measure RR irregularity
-(\feat{rr\_sampen}, \feat{rri\_multiscale\_entropy},
-\feat{pri\_approximate\_entropy}), all with signs saying more irregular means
-more AF: the ``irregularly irregular rhythm'' criterion. Notably
-\feat{p\_wave\_corr\_coeff\_std} enters with a \emph{positive} weight alongside
-its median's negative one, so the model is using both the level and the
-variability of P-wave consistency.
+This recovers the two textbook criteria for AF unprompted: four P-wave features
+lead, headed by beat-to-beat P-wave reproducibility with a large negative weight
+(less consistent $\Rightarrow$ more AF-like, i.e.\ the absent P wave), and three
+RR-irregularity measures follow, all signed so that more irregular means more AF.
 
-\textbf{(ii) Class imbalance.} Class weighting was treated as a hyperparameter
-rather than assumed: $\{$none, \texttt{balanced}$\}$ was searched jointly with
-the regularisation strength by patient-grouped cross-validation scored directly
-on $M$. The search selected \textbf{no class weighting} with $C = 0.01$. That is
-the opposite of the usual advice, and it follows from the metric: `balanced'
-weighting inflates the minority class to raise recall, but here a false positive
-costs $100\times$ what a true positive earns, so buying recall at the price of
-specificity is exactly the wrong trade --- the same trade that \emph{helped} in
-Part (b), where the metric was balanced accuracy.
-
-The imbalance is therefore handled by \emph{cost-sensitive thresholding} rather
-than by reweighting the loss: moving the cut from the default $0.5$ to the
-selected $0.8887$ is what adapts the model to a $100{:}1$ error cost. Measured on
-\texttt{val.csv} (patient $51$ excluded, see below), that move improves every
-quantity that matters here and costs only recall:
-
-\begin{table}[h]
-\centering\footnotesize
-\begin{tabular}{@{}lrrrrrr@{}}
-\toprule
-\textbf{Threshold} & \textbf{M} & \textbf{TP} & \textbf{FP} & \textbf{Recall}
-& \textbf{FPR} & \textbf{AP} \\
-\midrule
-$0.5$ (default)  & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
-$0.8887$ (chosen) & $\mathbf{0.6378}$ & $2115$ & $\mathbf{13}$ & $0.7387$ & $\mathbf{0.00101}$ & $0.9878$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Cutting false positives from $33$ to $13$ is worth more than the $317$ true
-positives given up, which is the whole character of this metric. Average
-precision is identical at both rows because AP is threshold-free --- exactly the
-insensitivity observed in Part (b), and the reason AP alone cannot be used to
-tune an operating point.
-
-\textbf{(iii) Threshold selection.} The threshold is chosen on pooled
-patient-grouped out-of-fold predictions on \texttt{train.csv} together with the
-final model's predictions on \texttt{val.csv}, which the model never trains on.
-Rather than the raw arg-max of $M$, we take the \emph{largest} threshold whose
-$M$ is within $0.01$ of the best: the arg-max sits exactly where a couple of
-negatives happen to fall below the cut, and a slightly stricter threshold costs
-almost no recall while protecting against the private test set placing one more
-negative just above it. As an anchor, for calibrated probabilities the threshold
-maximising expected $M$ is $\alpha P/(N + \alpha P)$ with $\alpha = 1/\epsilon$,
-since admitting a window with $P(\mathrm{AF})=p$ changes $M$ by
-$p/P - \alpha(1-p)/N$.
-
-On the pooled selection set the sweep chose $\mathbf{0.8887}$, against a
-calibrated-optimal anchor of $0.9633$. The gap is informative rather than
-alarming: it says the fitted probabilities are somewhat under-confident, so the
-empirical sweep --- which assumes nothing about calibration --- settles lower
-than the theoretical value would. At that threshold the pooled operating point
-is $\mathrm{TP}=9622$, $\mathrm{FP}=56$, $\mathrm{TPR}=0.7380$,
-$\mathrm{FPR}=0.0011$, giving $M = 0.6351$; patient-grouped cross-validated $M$
-on training data alone is $0.6276$, so the selection is not obviously
-over-fitted to the validation split. Note where the remaining headroom is: the
-$56$ false positives cost $0.11$ of $M$, while all the recall earned only
-$0.738$ --- on this metric, suppressing false positives is worth far more than
-chasing the last few true ones.
-
-\begin{center}
-\includegraphics[width=0.42\textwidth]{partc_m_vs_threshold.png}
-\hfill
-\includegraphics[width=0.56\textwidth]{partc_epsilon_sweep.png}
-\end{center}
-
-\textbf{Trend as $1/\epsilon$ varies over $[10, 1000]$.} As the false-positive
-penalty grows, the best achievable $M$ falls roughly linearly and the optimal
-threshold rises towards $1$ and then saturates. Both follow from the anchor
-above: $\alpha P/(N+\alpha P)$ increases monotonically in $\alpha$, so a harsher
-penalty demands more confidence before calling AF; and once the threshold is high
-enough that only the few most confident windows are admitted, further increases
-in $\alpha$ cannot remove the remaining false positives, so $M$ decreases at a
-rate set by the residual FPR. The sweep here is computed on the full validation
-set, so the achievable $M$ is already negative over most of the range --- with
-$\mathrm{FPR} = 0.0335$ at the chosen cut, the penalty term $\alpha\,
-\mathrm{FPR}$ passes the maximum attainable recall of $1$ as soon as
-$1/\epsilon \gtrsim 30$, and no threshold satisfying the $\mathrm{TPR} \ge 0.1$
-eligibility floor escapes it. That is the same patient-$51$ effect seen in the
-table above, viewed as a function of the penalty rather than of the threshold.
-
-\textbf{(iv) Final metrics of the submitted model, and one noisy patient.}
+\textbf{(ii) Class imbalance, and (iv) final metrics.} Class weighting was
+searched ($\{$none, \texttt{balanced}$\}$ jointly with $C$, by patient-grouped CV
+scored on $M$) and \emph{rejected}: `balanced' buys recall at the cost of
+specificity, the right trade for Part (b)'s balanced accuracy and the wrong one
+at $100\times$ per false positive. The imbalance is instead handled by
+cost-sensitive thresholding --- moving the cut from $0.5$ to $0.8887$.
 
 \begin{table}[h]
 \centering\footnotesize
@@ -309,49 +165,69 @@ table above, viewed as a function of the penalty rather than of the threshold.
 \textbf{Population} & \textbf{Threshold} & \textbf{M} & \textbf{TP} & \textbf{FP}
 & \textbf{AF recall} & \textbf{AF FPR} & \textbf{AP} \\
 \midrule
-\texttt{val.csv}, patient 51 excluded & $0.8887$ (chosen) & $\mathbf{0.6378}$ & $2115$ & $13$ & $0.7387$ & $0.00101$ & $0.9878$ \\
-\texttt{val.csv}, patient 51 excluded & $0.5$             & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
-\texttt{val.csv}, all rows            & $0.8887$ (chosen) & $-2.5683$ & $2893$ & $450$ & $0.7846$ & $0.03353$ & $0.9109$ \\
-\texttt{val.csv}, all rows            & $0.5$             & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0.04009$ & $0.9109$ \\
+val, patient 51 excluded & $0.8887$ & $\mathbf{0.6378}$ & $2115$ & $13$ & $0.7387$ & $0.00101$ & $0.9878$ \\
+val, patient 51 excluded & $0.5$    & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
+val, all rows            & $0.8887$ & $-2.5683$ & $2893$ & $450$ & $0.7846$ & $0.03353$ & $0.9109$ \\
+val, all rows            & $0.5$    & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0.04009$ & $0.9109$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The two populations differ by $3.2$ in $M$, and essentially all of it is one
-patient. Of the $450$ false positives on the full validation set, $437$ come from
-patient $51$ alone: that patient contributes $547$ non-AF windows and $437$ of
-them are called AF, a $\mathbf{80\%}$ false-positive rate against
-$\mathbf{0.10\%}$ for the other eleven validation patients combined. This is the
-``systematic outlier patient'' case the assignment points at, and out-of-fold
-predictions localise it immediately.
+Thresholding cuts false positives $33 \to 13$ for $317$ true positives, which
+this metric rates as worth it; AP is identical across thresholds because it is
+threshold-free, the same insensitivity seen in Part (b).
 
-It is not purely a threshold artefact. Average precision falls from $0.9878$ to
-$0.9109$ when patient $51$ is included, and AP does not depend on the threshold
-at all --- so the model genuinely \emph{ranks} that patient's non-AF windows as
-AF-like, and no choice of cut-off can fully recover it. We report both rows
-rather than only the favourable one, because the honest reading is that
-$M = 0.6378$ is the score conditional on the evaluation set containing no
-patient of this kind, and a single such patient would dominate the result. The
-mitigation actually available within a linear model is better features: a second
-pipeline adding signal-quality descriptors from the raw waveform was built for
-exactly this failure mode --- noisy recordings whose spurious QRS detections
-imitate an irregular rhythm --- and is included in the repository, though it was
-not selected for submission here.
+\textbf{One noisy patient.} The two populations differ by $3.2$ in $M$, and
+almost all of it is patient $51$: it supplies $547$ non-AF windows of which
+$437$ are called AF --- an $80\%$ false-positive rate against $0.10\%$ for the
+other eleven validation patients combined, i.e.\ $437$ of all $450$ false
+positives. This is not a threshold artefact: AP falls $0.9878 \to 0.9109$ when it
+is included, and AP does not depend on the threshold, so the model genuinely
+\emph{ranks} that patient's non-AF windows as AF-like. We report both rows rather
+than only the favourable one, since $M = 0.6378$ is the score conditional on the
+evaluation set containing no such patient.
+
+\textbf{(iii) Threshold selection.} Chosen on pooled patient-grouped
+out-of-fold predictions on \texttt{train.csv} plus predictions on the untouched
+\texttt{val.csv}, sweeping every distinct predicted probability ($17{,}108$
+candidate cuts) rather than a grid. We take not the arg-max of $M$ but the
+\emph{largest} threshold within $0.01$ of it: the arg-max sits exactly where a
+few negatives happen to fall below the cut, and a stricter threshold costs almost
+no recall while protecting against one more negative landing above it. This gave
+$\mathbf{0.8887}$, against the calibrated-optimal anchor
+$\alpha P/(N + \alpha P) = 0.9633$ (from admitting a window with
+$P(\mathrm{AF}) = p$ changing $M$ by $p/P - \alpha(1-p)/N$); the gap says the
+fitted probabilities are mildly under-confident, which the empirical sweep does
+not assume away.
+
+\begin{center}
+\includegraphics[width=0.40\textwidth]{partc_m_vs_threshold.png}
+\hfill
+\includegraphics[width=0.56\textwidth]{partc_epsilon_sweep.png}
+\end{center}
+
+\textbf{Trend in $1/\epsilon$} (sampled at $200$ points over $[10,1000]$). As the
+penalty grows the optimal threshold rises towards $1$ and the best achievable $M$
+falls: the anchor $\alpha P/(N + \alpha P)$ increases monotonically in $\alpha$,
+so more confidence is demanded before calling AF, and once only the most certain
+windows are admitted no further increase can remove the residual false positives.
+The sweep is over the full validation set, so $M$ is already negative over most of
+the range --- with $\mathrm{FPR} = 0.0335$ the penalty $\alpha\,\mathrm{FPR}$
+exceeds the maximum attainable recall once $1/\epsilon \gtrsim 30$. That is the
+patient-$51$ effect again, seen against the penalty rather than the threshold.
 
 %======================================================================
 \section*{Disclosure}
 
-AI use: this assignment was completed with assistance from Claude (Anthropic),
-which was used for code design, implementation and drafting of this report. All
-outputs were reviewed, executed and verified by us.
-
-Open-source code: no third-party source code is copied into the submitted files;
-only NumPy, SciPy, pandas and scikit-learn are imported. The raw-signal features
-re-implement published, openly described methods, cited where they are defined in
-\texttt{part\_c.py}: Pan--Tompkins QRS detection; Lake \& Moorman's coefficient of
-sample entropy (COSEn); Zhou et al.'s symbolic-dynamics Shannon entropy; Sarkar
-et al.'s Lorenz-plot $\delta$RR analysis; and zero-padding QRST cancellation for
-fibrillatory-wave analysis. The $314$ supplied Goodfellow columns come from the
-\texttt{Seb-Good/ecg-features} library, as stated in the assignment.
+\textbf{AI use.} Completed with assistance from Claude (Anthropic), used for code
+design, implementation and drafting this report; all outputs were reviewed,
+executed and verified by us. \textbf{Open source.} No third-party code is copied
+into the submitted files; only NumPy, SciPy, pandas and scikit-learn are
+imported. The raw-signal features (built but not submitted) re-implement
+published methods cited at their definitions: Pan--Tompkins QRS detection; Lake
+\& Moorman's COSEn; Zhou et al.'s symbolic-dynamics entropy; Sarkar et al.'s
+Lorenz-plot $\delta$RR analysis; zero-padding QRST cancellation. The $314$
+supplied Goodfellow columns come from the \texttt{Seb-Good/ecg-features} library,
+as stated in the assignment.
 
 \end{document}
