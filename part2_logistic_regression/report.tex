@@ -1,0 +1,183 @@
+% COL774 Assignment 1.2 -- report  (Part 2: Logistic Regression)
+% Compile: pdflatex report.tex     (packages: geometry, booktabs, amsmath, graphicx)
+% Hard limit: 4 pages including figures and tables.
+%
+% Part (a) numbers below are REAL, measured on part_ab_train.csv / part_ab_val.csv.
+% Part (c) numbers are marked \TODO and must be replaced with the output of
+%   python dev/run_report_pipeline.py <part_ab_dir> <partc_dataset_dir> out/
+% run against the real Kaggle competition data.
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=1.6cm]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+\setlength{\parskip}{1.5pt}
+\setlength{\textfloatsep}{6pt}
+\setlength{\intextsep}{6pt}
+\setlength{\parindent}{0pt}
+\newcommand{\feat}[1]{\texttt{\small #1}}
+\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries COL774 Assignment 1.2 --- Report}\\[2pt]
+  {\small Entry numbers: \TODO{2020CS10058, 2023CS10552 --- verify}}
+\end{center}
+\vspace{-4pt}\hrule\vspace{8pt}
+
+%======================================================================
+\section*{Part (a) --- Gradient-descent variants}
+
+Both plots put loss against \emph{wall-clock training time} rather than epochs,
+because one epoch means something different for each method: full-batch takes a
+single update per epoch while SGD takes $n$, so equal epoch counts are not equal
+work. Loss evaluation is excluded from the clock, since it is reporting rather
+than training.
+
+\begin{center}
+\includegraphics[width=0.49\textwidth]{parta_train_loss_vs_time.png}
+\hfill
+\includegraphics[width=0.49\textwidth]{parta_val_loss_vs_time.png}
+\end{center}
+
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Method} & \textbf{Epochs} & \textbf{Train s} & \textbf{Final train}
+& \textbf{Final val} & \textbf{Min val} & \textbf{at epoch} \\
+\midrule
+Full-batch GD      & 500 & 0.90 & 0.4793 & 0.5339 & 0.5339 & 500 \\
+Mini-batch GD      & 200 & 0.70 & 0.4652 & 0.5301 & 0.5281 & 72  \\
+SGD                & 30  & 2.31 & 0.4857 & 0.5350 & 0.5350 & 30  \\
+Mini-batch AdaGrad & 200 & 0.87 & 0.4626 & 0.5286 & 0.5265 & 193 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Which method reduces the loss fastest.} Per unit of time, mini-batch GD
+and AdaGrad are far ahead: both are already below $0.60$ validation loss within
+about $10$\,ms, a level full-batch GD does not reach until roughly $0.2$\,s and
+SGD not until about $0.5$\,s. The reason is updates per unit work --- one pass
+over the data gives full-batch a single step but gives mini-batch $n/32 \approx
+135$, so full-batch spends the same arithmetic to move the parameters far less.
+AdaGrad and mini-batch are nearly indistinguishable early, but AdaGrad's
+per-coordinate scaling lets it settle at the lowest final loss of the four
+($0.4626$ train, $0.5286$ val); its advantage appears late, once the raw
+gradient magnitude has shrunk and a fixed step size becomes too small. SGD is
+slowest in wall-clock terms despite touching each example: with batch size $1$
+it performs $n$ Python-level iterations per epoch, so its per-update overhead
+dominates and $30$ epochs cost $2.31$\,s, more than any other method.
+
+\textbf{When each model starts to overfit.} Overfitting shows as validation loss
+turning upward while training loss keeps falling. Mini-batch GD reaches its
+minimum validation loss of $0.5281$ at epoch $72$ (of $200$) and drifts up
+afterwards, so it overfits for roughly the last two thirds of its schedule.
+AdaGrad bottoms out at $0.5265$ at epoch $193$ (of $200$), i.e.\ it is essentially
+still improving when the prescribed schedule ends. Full-batch GD and SGD never
+turn: their minima coincide with their final epochs, so within the prescribed
+budgets they are under-trained rather than over-trained --- consistent with the
+time plot, where both are still descending when they stop.
+
+%======================================================================
+\section*{Part (c) --- Feature engineering for AF detection}
+
+\textbf{Why the pipeline looks the way it does.} The metric is
+$M = \mathrm{TP}/P - \mathrm{FP}/(N\epsilon)$ with $\epsilon = 1/100$, i.e.
+$M = \mathrm{TPR} - 100\,\mathrm{FPR}$. One false positive costs as much as
+$100/N$ of recall, so on a validation set with $N \approx 1000$ non-AF windows a
+single false positive burns $0.1$ of $M$ while one extra true positive buys about
+$0.01$. Every choice below follows from that asymmetry.
+
+\textbf{Preprocessing.} Missing values are median-imputed, then every feature is
+\emph{winsorised} to the training set's $[0.1\%, 99.9\%]$ quantiles before
+standardisation. Winsorising matters specifically because of the metric: a single
+wild outlier at test time would otherwise produce a huge logit and a confident
+false positive. All statistics --- medians, clip limits, means, standard
+deviations --- are fit on \texttt{train.csv} only and applied unchanged elsewhere.
+
+\textbf{Features.} The $392$ supplied columns come from the published Goodfellow
+\emph{ecg-features} library and are dominated by RR/HRV statistics. They
+therefore largely miss AF's \emph{other} defining sign, the loss of organised
+atrial activity, and --- more damagingly for this metric --- they cannot
+distinguish a genuinely irregular rhythm from a noisy recording. The submitted
+feature map adds features computed from \texttt{raw\_signals/}, in three groups:
+
+\begin{itemize}\itemsep1pt
+  \item \emph{Rhythm irregularity.} Pan--Tompkins QRS detection, then COSEn
+    (Lake \& Moorman), symbolic-dynamics Shannon entropy (Zhou et al.),
+    Lorenz-plot $\delta$RR occupancy (Sarkar et al.), Poincar\'e SD1/SD2 and the
+    turning-point ratio. AF is ``irregularly irregular'', and these quantify it.
+  \item \emph{Atrial activity.} Zero-padding QRST cancellation: an average beat
+    is subtracted at every R peak, and what remains in the TQ intervals is
+    measured --- P-wave amplitude, its beat-to-beat reproducibility, and the
+    $4$--$9$\,Hz fibrillatory-wave band power. In sinus rhythm the P wave repeats
+    almost identically beat to beat; in AF it is absent.
+  \item \emph{Signal quality.} Baseline wander, high-frequency power, flatline
+    and saturation fractions, and a QRS-to-background energy ratio. These exist
+    purely to \emph{prevent} false positives: noise causes spurious QRS
+    detections, which look exactly like the irregular RR series that means AF.
+\end{itemize}
+
+\textbf{(i) Top 10 features and how they were ranked.} Columns are scored by mean
+out-of-fold $|\mathrm{AUC}-0.5|$ across \emph{patient-grouped} folds, so a column
+that separates only a handful of patients cannot outrank one that generalises;
+the best \TODO{d} are kept. \TODO{Paste the top-10 table from REPORT\_DATA.md.}
+
+\textbf{(ii) Class imbalance.} \TODO{Paste the class-imbalance table (M, TP, FP,
+recall, FPR, AP for class\_weight None vs balanced) and state which was chosen
+and by how much it improved M.}
+
+\textbf{(iii) Threshold selection.} The threshold is chosen on pooled
+patient-grouped out-of-fold predictions on \texttt{train.csv} together with the
+final model's predictions on \texttt{val.csv}, which the model never trains on.
+Rather than the raw arg-max of $M$, we take the \emph{largest} threshold whose
+$M$ is within $0.01$ of the best: the arg-max sits exactly where a couple of
+negatives happen to fall below the cut, and a slightly stricter threshold costs
+almost no recall while protecting against the private test set placing one more
+negative just above it. As an anchor, for calibrated probabilities the threshold
+maximising expected $M$ is $\alpha P/(N + \alpha P)$ with $\alpha = 1/\epsilon$,
+since admitting a window with $P(\mathrm{AF})=p$ changes $M$ by
+$p/P - \alpha(1-p)/N$. Chosen value: \TODO{t}; anchor: \TODO{a}.
+
+\begin{center}
+\includegraphics[width=0.42\textwidth]{partc_m_vs_threshold.png}
+\hfill
+\includegraphics[width=0.56\textwidth]{partc_epsilon_sweep.png}
+\end{center}
+
+\textbf{Trend as $1/\epsilon$ varies over $[10, 1000]$.} As the false-positive
+penalty grows, the best achievable $M$ falls roughly linearly and the optimal
+threshold rises towards $1$ and then saturates. Both follow from the anchor
+above: $\alpha P/(N+\alpha P)$ increases monotonically in $\alpha$, so a harsher
+penalty demands more confidence before calling AF; and once the threshold is high
+enough that only the few most confident windows are admitted, further increases
+in $\alpha$ cannot remove the remaining false positives, so $M$ decreases at a
+rate set by the residual FPR. \TODO{Confirm against your plot.}
+
+\textbf{(iv) Final metrics on \texttt{val.csv}.}
+\TODO{Paste the table: M, TP, FP, AF recall, AF FPR at the chosen threshold and
+at 0.5, against the Part (a) baseline (the 392 supplied columns only).}
+
+%======================================================================
+\section*{Disclosure}
+
+AI use: this assignment was completed with assistance from Claude (Anthropic),
+which was used for code design, implementation and drafting of this report. All
+outputs were reviewed, executed and verified by us.
+
+Open-source code: no third-party source code is copied into the submitted files;
+only NumPy, SciPy, pandas and scikit-learn are imported. The raw-signal features
+re-implement published, openly described methods, cited where they are defined in
+\texttt{part\_c.py}: Pan--Tompkins QRS detection; Lake \& Moorman's coefficient of
+sample entropy (COSEn); Zhou et al.'s symbolic-dynamics Shannon entropy; Sarkar
+et al.'s Lorenz-plot $\delta$RR analysis; and zero-padding QRST cancellation for
+fibrillatory-wave analysis. The $314$ supplied Goodfellow columns come from the
+\texttt{Seb-Good/ecg-features} library, as stated in the assignment.
+
+\end{document}

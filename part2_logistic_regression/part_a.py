@@ -23,6 +23,7 @@ training/validation loss-curve plots required in the report):
         part_ab_val.csv loss_curve.csv
 """
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -103,10 +104,18 @@ def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None, snapshot_epochs=()
 
     train_losses = []
     val_losses = []
+    # Wall-clock seconds of *training* elapsed at the end of each epoch. The
+    # report's Part (a) plots put loss against time rather than epochs, and one
+    # epoch costs wildly different amounts per method (full-batch does a single
+    # update, SGD does n), so epochs would not be comparable across methods.
+    # Loss evaluation is excluded from the total: it is reporting, not training.
+    epoch_times = []
+    train_seconds = 0.0
     snapshot_epochs = set(snapshot_epochs)
     snapshots = {}
 
     for epoch in range(1, hp["epochs"] + 1):
+        epoch_start = time.perf_counter()
         order = rng.permutation(n) if hp["shuffle"] else np.arange(n)
 
         for start in range(0, n, batch_size):
@@ -131,14 +140,17 @@ def train(X, Y_onehot, method, X_val=None, Y_onehot_val=None, snapshot_epochs=()
                 W -= hp["lr"] * gW
                 b -= hp["lr"] * gb
 
+        train_seconds += time.perf_counter() - epoch_start
+
         # Record loss once per full epoch, over the FULL training set.
         train_losses.append(cross_entropy_loss(X, Y_onehot, W, b))
         if X_val is not None:
             val_losses.append(cross_entropy_loss(X_val, Y_onehot_val, W, b))
+        epoch_times.append(train_seconds)
         if epoch in snapshot_epochs:
             snapshots[epoch] = (W.copy(), b.copy())
 
-    return W, b, train_losses, val_losses, snapshots
+    return W, b, train_losses, val_losses, snapshots, epoch_times
 
 
 def write_weights(path, W, b):
@@ -186,7 +198,8 @@ def main():
         X_val_std = apply_standardizer(X_val, mean, std)
         Y_val = one_hot(y_val)
 
-    W, b, train_losses, val_losses, _snapshots = train(X_train_std, Y_train, method, X_val_std, Y_val)
+    W, b, train_losses, val_losses, _snapshots, epoch_times = train(
+        X_train_std, Y_train, method, X_val_std, Y_val)
 
     logits_test = X_test_std @ W + b
     P_test = stable_softmax(logits_test)
@@ -196,10 +209,10 @@ def main():
 
     if loss_curve_path is not None:
         with open(loss_curve_path, "w") as f:
-            f.write("epoch,train_loss,val_loss\n")
+            f.write("epoch,seconds,train_loss,val_loss\n")
             for i, tl in enumerate(train_losses, start=1):
                 vl = val_losses[i - 1] if val_losses else ""
-                f.write(f"{i},{tl},{vl}\n")
+                f.write(f"{i},{epoch_times[i - 1]},{tl},{vl}\n")
 
 
 if __name__ == "__main__":

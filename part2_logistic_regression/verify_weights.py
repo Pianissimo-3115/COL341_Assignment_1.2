@@ -76,7 +76,7 @@ def main():
     loss_rows = []
 
     for method in PART_A_METHODS:
-        _, _, train_losses, _, snapshots = part_a.train(
+        _, _, train_losses, _, snapshots, _times = part_a.train(
             X_train_std, Y_train, method, snapshot_epochs=SNAPSHOT_EPOCHS
         )
         for epoch in SNAPSHOT_EPOCHS:
