@@ -270,7 +270,7 @@ def fit_version(mod, name, X_train, y_train, groups, n_given):
              "cols": np.arange(X_train.shape[1])})
 
 
-def run_part_c(dataset_dir, out_dir, lines):
+def run_part_c(dataset_dir, out_dir, lines, only=None, fast=False):
     train_df = pd.read_csv(Path(dataset_dir) / "train.csv")
     val_path = Path(dataset_dir) / "val.csv"
     if not val_path.exists():
@@ -279,9 +279,21 @@ def run_part_c(dataset_dir, out_dir, lines):
         return
     val_df = pd.read_csv(val_path)
 
+    todo = VERSIONS if not only else [
+        (lab, fn) for lab, fn in VERSIONS
+        if lab.split()[0] in {v.strip() for v in only.split(",")}]
+    if not todo:
+        raise SystemExit(f"no versions matched '{only}' (use e.g. v1,v3)")
+
     results, best_name, best_m, best_pack = [], None, -np.inf, None
-    for label, filename in VERSIONS:
+    for label, filename in todo:
         mod = load_module(ROOT / "variants" / filename, filename[:-3])
+        if fast:
+            # The dominant cost is tune_hyperparameters: 12 configs x 5 folds
+            # of logistic regression per version. Shrinking the grid cuts that
+            # by ~4x at the price of a coarser C.
+            mod.C_GRID = (0.01, 0.1)
+            mod.CLASS_WEIGHT_GRID = (None, "balanced")
         tr = mod.drop_excluded_patients(train_df.copy(), "train.csv")
         va = mod.drop_excluded_patients(val_df.copy(), "val.csv")
 
@@ -440,12 +452,16 @@ def run_part_c(dataset_dir, out_dir, lines):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) not in (4, 5, 6):
         print(__doc__)
         sys.exit(1)
     part_ab_dir, partc_dir, out = sys.argv[1:4]
+    only = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "all" else None
+    fast = len(sys.argv) > 5 and sys.argv[5].lower() in ("fast", "1", "true")
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if only or fast:
+        print(f"versions={only or 'all'} fast={fast}", file=sys.stderr)
 
     lines = ["# Report data", "",
              f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
@@ -454,7 +470,7 @@ def main():
         run_part_a(part_ab_dir, out_dir, lines)
         run_part_b(part_ab_dir, lines)
     if partc_dir.lower() != "skip":
-        run_part_c(partc_dir, out_dir, lines)
+        run_part_c(partc_dir, out_dir, lines, only=only, fast=fast)
 
     (out_dir / "REPORT_DATA.md").write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
