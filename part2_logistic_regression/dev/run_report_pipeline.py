@@ -165,6 +165,74 @@ def run_part_a(part_ab_dir, out_dir, lines):
 
 
 # --------------------------------------------------------------------------
+# Part (b)
+# --------------------------------------------------------------------------
+def run_part_b(part_ab_dir, lines):
+    """Macro-AP, balanced accuracy and per-class recall for the four
+    imbalance methods, which is what shows whether reweighting helped."""
+    import part_b
+    from sklearn.metrics import (average_precision_score,
+                                 balanced_accuracy_score, recall_score,
+                                 precision_score, accuracy_score)
+
+    train_csv = Path(part_ab_dir) / "part_ab_train.csv"
+    val_csv = Path(part_ab_dir) / "part_ab_val.csv"
+    if not train_csv.exists() or not val_csv.exists():
+        lines.append("## Part (b)\n\n*Skipped: part_ab CSVs not found.*\n")
+        return
+
+    names, X_train, y_train = part_b.load_dataset(str(train_csv))
+    _, X_val, y_val = part_b.load_dataset(str(val_csv), feature_names=names)
+    mean, std = part_b.fit_standardizer(X_train)
+    Xtr = part_b.apply_standardizer(X_train, mean, std)
+    Xva = part_b.apply_standardizer(X_val, mean, std)
+    Ytr = part_b.one_hot(y_train)
+
+    counts = np.bincount(y_train, minlength=3)
+    rows = []
+    for method in ["baseline", "classweight", "classweight2", "focal"]:
+        W, b, _, _ = part_b.train(Xtr, y_train, Ytr, method)
+        P = part_b.stable_softmax(Xva @ W + b)
+        pred = P.argmax(axis=1)
+        Yva = part_b.one_hot(y_val)
+        rows.append({
+            "method": method,
+            "macro_ap": average_precision_score(Yva, P, average="macro"),
+            "bal_acc": balanced_accuracy_score(y_val, pred),
+            "accuracy": accuracy_score(y_val, pred),
+            "recall": recall_score(y_val, pred, average=None, zero_division=0),
+            "precision": precision_score(y_val, pred, average=None,
+                                         zero_division=0),
+        })
+        print(f"[part b] {method}: macroAP={rows[-1]['macro_ap']:.4f} "
+              f"balAcc={rows[-1]['bal_acc']:.4f} "
+              f"AF recall={rows[-1]['recall'][1]:.4f}", file=sys.stderr)
+
+    lines.append("## Part (b) — class imbalance\n")
+    lines.append(f"Training class counts: N={counts[0]}, A(AF)={counts[1]}, "
+                 f"O={counts[2]}. Metrics on `part_ab_val.csv`.\n")
+    lines.append("| method | Macro-AP | balanced acc | plain acc | recall N "
+                 "| recall A (AF) | recall O | precision A |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        lines.append(
+            f"| {r['method']} | {r['macro_ap']:.4f} | {r['bal_acc']:.4f} "
+            f"| {r['accuracy']:.4f} | {r['recall'][0]:.4f} "
+            f"| **{r['recall'][1]:.4f}** | {r['recall'][2]:.4f} "
+            f"| {r['precision'][1]:.4f} |")
+    lines.append("")
+    base = rows[0]
+    for r in rows[1:]:
+        lines.append(
+            f"- `{r['method']}` vs baseline: AF recall "
+            f"{base['recall'][1]:.4f} -> {r['recall'][1]:.4f}, balanced acc "
+            f"{base['bal_acc']:.4f} -> {r['bal_acc']:.4f}, plain acc "
+            f"{base['accuracy']:.4f} -> {r['accuracy']:.4f}, Macro-AP "
+            f"{base['macro_ap']:.4f} -> {r['macro_ap']:.4f}.")
+    lines.append("")
+
+
+# --------------------------------------------------------------------------
 # Part (c)
 # --------------------------------------------------------------------------
 def fit_version(mod, name, X_train, y_train, groups, n_given):
@@ -384,6 +452,7 @@ def main():
 
     if part_ab_dir.lower() != "skip":
         run_part_a(part_ab_dir, out_dir, lines)
+        run_part_b(part_ab_dir, lines)
     if partc_dir.lower() != "skip":
         run_part_c(partc_dir, out_dir, lines)
 

@@ -1,10 +1,19 @@
 % COL774 Assignment 1.2 -- report  (Part 2: Logistic Regression)
-% Compile: pdflatex report.tex     (packages: geometry, booktabs, amsmath, graphicx)
-% Hard limit: 4 pages including figures and tables.
 %
-% Part (a) numbers below are REAL, measured on part_ab_train.csv / part_ab_val.csv.
-% Part (c) numbers are marked \TODO and must be replaced with the output of
-%   python dev/run_report_pipeline.py <part_ab_dir> <partc_dataset_dir> out/
+% Compile: pdflatex report.tex     (packages: geometry, booktabs, amsmath,
+%          graphicx, xcolor). The four figures must sit next to this file:
+%              cp <out_dir>/*.png .
+%          where <out_dir> is what run_report_pipeline.py wrote.
+%
+% HARD LIMIT: 4 pages including figures and tables. This has NOT been compiled
+% (no LaTeX toolchain on the dev machine), so check the page count on the first
+% build. If it runs over, trim in this order: shrink the two Part (a) figures to
+% 0.45\textwidth, cut the Part (b) closing sentence about AF precision, then
+% shorten the Part (c) feature bullet list.
+%
+% Parts (a) and (b) below are REAL, measured on part_ab_train.csv /
+% part_ab_val.csv. Part (c) items are marked \TODO and must be filled from
+%   python dev/run_report_pipeline.py skip <partc_dataset_dir> out/
 % run against the real Kaggle competition data.
 \documentclass[10pt,a4paper]{article}
 \usepackage[margin=1.6cm]{geometry}
@@ -52,27 +61,30 @@ than training.
 \textbf{Method} & \textbf{Epochs} & \textbf{Train s} & \textbf{Final train}
 & \textbf{Final val} & \textbf{Min val} & \textbf{at epoch} \\
 \midrule
-Full-batch GD      & 500 & 0.90 & 0.4793 & 0.5339 & 0.5339 & 500 \\
-Mini-batch GD      & 200 & 0.70 & 0.4652 & 0.5301 & 0.5281 & 72  \\
-SGD                & 30  & 2.31 & 0.4857 & 0.5350 & 0.5350 & 30  \\
-Mini-batch AdaGrad & 200 & 0.87 & 0.4626 & 0.5286 & 0.5265 & 193 \\
+Full-batch GD      & 500 & 0.59 & 0.4793 & 0.5339 & 0.5339 & 500 \\
+Mini-batch GD      & 200 & 0.64 & 0.4652 & 0.5301 & 0.5281 & 72  \\
+SGD                & 30  & 2.22 & 0.4857 & 0.5350 & 0.5350 & 30  \\
+Mini-batch AdaGrad & 200 & 0.76 & 0.4626 & 0.5286 & 0.5265 & 193 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Which method reduces the loss fastest.} Per unit of time, mini-batch GD
-and AdaGrad are far ahead: both are already below $0.60$ validation loss within
-about $10$\,ms, a level full-batch GD does not reach until roughly $0.2$\,s and
-SGD not until about $0.5$\,s. The reason is updates per unit work --- one pass
-over the data gives full-batch a single step but gives mini-batch $n/32 \approx
-135$, so full-batch spends the same arithmetic to move the parameters far less.
-AdaGrad and mini-batch are nearly indistinguishable early, but AdaGrad's
-per-coordinate scaling lets it settle at the lowest final loss of the four
-($0.4626$ train, $0.5286$ val); its advantage appears late, once the raw
-gradient magnitude has shrunk and a fixed step size becomes too small. SGD is
-slowest in wall-clock terms despite touching each example: with batch size $1$
-it performs $n$ Python-level iterations per epoch, so its per-update overhead
-dominates and $30$ epochs cost $2.31$\,s, more than any other method.
+\textbf{Which method reduces the loss fastest.} The three batched methods all
+finish in well under a second and their totals differ by less than run-to-run
+timing noise, so the informative comparison is the \emph{shape} of the curves,
+not the totals. Per unit of time mini-batch GD and AdaGrad are clearly ahead:
+both are below $0.60$ validation loss within roughly $10$\,ms, a level
+full-batch GD does not reach until about $0.2$\,s and SGD not until about
+$0.5$\,s. The reason is updates per unit of arithmetic --- one pass over the data
+buys full-batch a single step but buys mini-batch $n/32 \approx 135$, so
+full-batch does the same work to move the parameters far less. AdaGrad and
+mini-batch are nearly indistinguishable early, but AdaGrad's per-coordinate
+scaling lets it settle at the lowest final loss of the four ($0.4626$ train,
+$0.5286$ val); its advantage appears late, once the raw gradient has shrunk and a
+fixed step size becomes too small. SGD is the one unambiguous outlier in
+wall-clock terms: at batch size $1$ it performs $n$ Python-level iterations per
+epoch, so per-update overhead dominates and $30$ epochs cost $2.22$\,s, several
+times any other method despite being the fewest epochs.
 
 \textbf{When each model starts to overfit.} Overfitting shows as validation loss
 turning upward while training loss keeps falling. Mini-batch GD reaches its
@@ -83,6 +95,55 @@ still improving when the prescribed schedule ends. Full-batch GD and SGD never
 turn: their minima coincide with their final epochs, so within the prescribed
 budgets they are under-trained rather than over-trained --- consistent with the
 time plot, where both are still descending when they stop.
+
+%======================================================================
+\section*{Part (b) --- Class imbalance: which metrics reveal the benefit}
+
+Training counts are $N{=}2723$, AF${=}366$, Other${=}1221$, so AF is outnumbered
+roughly $7{:}1$. All four models use the fixed mini-batch AdaGrad protocol, so
+any difference is attributable to the reweighting alone. Metrics on
+\texttt{part\_ab\_val.csv}:
+
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+\textbf{Method} & \textbf{Macro-AP} & \textbf{Bal.\ acc} & \textbf{Plain acc}
+& \textbf{Rec.\ N} & \textbf{Rec.\ AF} & \textbf{Rec.\ O} & \textbf{Prec.\ AF} \\
+\midrule
+Baseline       & 0.7765 & 0.7186 & \textbf{0.7998} & 0.9366 & 0.6923 & 0.5267 & 0.8060 \\
+classweight    & 0.7748 & \textbf{0.7555} & 0.7738 & 0.8305 & \textbf{0.7949} & 0.6412 & 0.6200 \\
+classweight2   & \textbf{0.7777} & 0.7322 & 0.7965 & 0.9161 & 0.7308 & 0.5496 & 0.7600 \\
+Focal ($\gamma{=}2$) & 0.7659 & 0.7403 & 0.7846 & 0.8767 & 0.7564 & 0.5878 & 0.6782 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Which metrics actually reflect the benefit.} Two of the four columns are
+actively misleading here. \emph{Plain accuracy gets worse} under every treatment
+($0.7998 \to 0.7738$ for full-strength weighting), because accuracy is dominated
+by the majority class and reweighting deliberately trades Normal recall
+($0.9366 \to 0.8305$) for minority recall --- so a reader tracking accuracy would
+conclude the treatments failed. \emph{Macro-AP is essentially flat}
+($0.7765 \to 0.7748 / 0.7777 / 0.7659$, i.e.\ within $\pm 0.011$), and for a
+principled reason: AP is computed from the \emph{ranking} of predicted
+probabilities, while class weighting mostly rescales the logits and shifts the
+decision boundary. Reweighting changes which side of the boundary examples fall
+on, not their relative order, so a threshold-free ranking metric is close to
+blind to it.
+
+What does reveal the benefit is \textbf{balanced accuracy} and
+\textbf{per-class AF recall}, both of which weight the minority class equally
+with the majority: balanced accuracy rises $0.7186 \to 0.7555$ and AF recall
+rises $0.6923 \to 0.7949$ under full-strength weighting, a $+10.3$ point gain on
+the class the task cares about. The ordering across methods is consistent:
+full-strength weighting moves the most, focal loss is intermediate
+($0.7564$ AF recall), and \texttt{classweight2} with $\alpha^{0.3}$ moves least
+($0.7308$) --- exactly as expected, since $p{=}0.3$ compresses the weights
+towards $1$ and so applies a weaker correction. The cost is AF precision, which
+falls $0.8060 \to 0.6200$: the treatments buy recall by accepting more false AF
+calls, which is the right trade only if false negatives are costlier than false
+positives --- the opposite of the regime in Part (c).
 
 %======================================================================
 \section*{Part (c) --- Feature engineering for AF detection}
