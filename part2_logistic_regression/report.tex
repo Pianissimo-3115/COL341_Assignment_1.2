@@ -160,15 +160,17 @@ cost-sensitive thresholding --- moving the cut from $0.5$ to $0.8887$.
 
 \begin{table}[h]
 \centering\footnotesize
-\begin{tabular}{@{}llrrrrrr@{}}
+\begin{tabular}{@{}lllrrrrrr@{}}
 \toprule
-\textbf{Population} & \textbf{Threshold} & \textbf{M} & \textbf{TP} & \textbf{FP}
-& \textbf{AF recall} & \textbf{AF FPR} & \textbf{AP} \\
+\textbf{Model} & \textbf{Population} & \textbf{Thr.} & \textbf{M} & \textbf{TP}
+& \textbf{FP} & \textbf{AF recall} & \textbf{AF FPR} & \textbf{AP} \\
 \midrule
-val, patient 51 excluded & $0.8887$ & $\mathbf{0.6378}$ & $2115$ & $13$ & $0.7387$ & $0.00101$ & $0.9878$ \\
-val, patient 51 excluded & $0.5$    & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
-val, all rows            & $0.8887$ & $-2.5683$ & $2893$ & $450$ & $0.7846$ & $0.03353$ & $0.9109$ \\
-val, all rows            & $0.5$    & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0.04009$ & $0.9109$ \\
+Submitted (392 cols)      & val, excl.\ pt.\ 51 & $0.8887$ & $\mathbf{0.6378}$ & $2115$ & $13$ & $0.7387$ & $0.00101$ & $0.9878$ \\
+Submitted (392 cols)      & val, excl.\ pt.\ 51 & $0.5$    & $0.5931$ & $2432$ & $33$ & $0.8495$ & $0.00256$ & $0.9878$ \\
+Part (a) baseline (78 cols) & val, excl.\ pt.\ 51 & $0.9504$ & $0.2339$ & $714$ & $2$ & $0.2494$ & $0.00016$ & $0.9481$ \\
+Part (a) baseline (78 cols) & val, excl.\ pt.\ 51 & $0.5$    & $0.1529$ & $2150$ & $77$ & $0.7510$ & $0.00598$ & $0.9481$ \\
+Submitted (392 cols)      & val, all rows       & $0.8887$ & $-2.5683$ & $2893$ & $450$ & $0.7846$ & $0.03353$ & $0.9109$ \\
+Submitted (392 cols)      & val, all rows       & $0.5$    & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0.04009$ & $0.9109$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -176,6 +178,16 @@ val, all rows            & $0.5$    & $-3.1255$ & $3256$ & $538$ & $0.8831$ & $0
 Thresholding cuts false positives $33 \to 13$ for $317$ true positives, which
 this metric rates as worth it; AP is identical across thresholds because it is
 threshold-free, the same insensitivity seen in Part (b).
+
+\textbf{Against the Part (a) baseline.} Restricting $\phi(x)$ to the $78$
+columns used in Parts (a)/(b) costs $0.40$ of $M$ ($0.6378 \to 0.2339$) and
+$0.04$ of AP. The $78$-column model is not merely noisier --- it is forced to be
+far more timid, choosing a threshold of $0.9504$ and catching only $24.9\%$ of AF
+to hold false positives down, where the full representation catches $73.9\%$ at a
+comparable false-positive count. The top-10 table explains why: nine of those ten
+features come from the $314$ Goodfellow columns, and only \feat{rr\_sampen}
+belongs to the Part (a) set. The P-wave descriptors that dominate the model
+simply are not available in the Part (a) representation.
 
 \textbf{One noisy patient.} The two populations differ by $3.2$ in $M$, and
 almost all of it is patient $51$: it supplies $547$ non-AF windows of which
