@@ -13,6 +13,12 @@ name: Update Kaggle Dataset
 #
 # Staging explicitly is also what keeps the assignment PDF and the datasets in
 # drive_data/ off Kaggle: only the files listed below are ever uploaded.
+#
+# Setup, once: add the KAGGLE_API_TOKEN secret to this repository. It is the
+# single token string from https://www.kaggle.com/settings/api ("Generate New
+# Token" under API) - not the contents of kaggle.json:
+#     gh secret set KAGGLE_API_TOKEN --repo Pianissimo-3115/COL341_Assignment_1.2
+# The dataset itself is created automatically on the first successful run.
 
 on:
   push:
@@ -37,7 +43,10 @@ jobs:
         run: |
           if [ -z "${KAGGLE_API_TOKEN:-}" ]; then
             echo "::error::KAGGLE_API_TOKEN is not set on this repository."
-            echo "Add it with:  gh secret set KAGGLE_API_TOKEN --repo Pianissimo-3115/COL341_Assignment_1.2 < kaggle.json"
+            echo "Generate a token at https://www.kaggle.com/settings/api ('Generate New Token'"
+            echo "under API) - it is a single token string, not the kaggle.json file - then run:"
+            echo "  gh secret set KAGGLE_API_TOKEN --repo Pianissimo-3115/COL341_Assignment_1.2"
+            echo "and paste the token when prompted."
             exit 1
           fi
           mkdir -p ~/.kaggle
