@@ -1,7 +1,7 @@
 """
-COL774 Assignment 1 - Part 2(c): Feature engineering for AF detection.
+COL774 Assignment 1 - Part 2(c), VERSION 5: automatic version selection.
 
-    python3 part_c.py dataset_dir/ model.pkl final_features.csv [variant]
+    python3 part_c.py dataset_dir/ model.pkl final_features.csv
 
 `dataset_dir` holds train.csv / val.csv / test.csv (release_id, patient, label,
 392 feature columns) and raw_signals/{patient}.npz (release_id, signal). The
@@ -32,17 +32,27 @@ before calling AF":
   * patient-grouped CV everywhere, since rows from one patient are highly
     correlated and ungrouped folds would badly over-estimate performance.
 
-Feature variants (4th argument, default "raw")
-----------------------------------------------
-  given      the 392 supplied columns only, cleaned and standardised.
-  given_sel  as above, then out-of-fold AUC ranking down to the best columns.
-  raw        given_sel + features computed from raw_signals/ (default).
-  gam        raw, then a spline basis expansion of the strongest features, so
-             the linear model can fit monotone-but-curved effects.
-  auto       score the four above by patient-grouped CV and keep the winner.
+What this version does
+----------------------
+Versions 1-4 each commit to one feature map. This one refuses to guess: it
+builds all four, scores each by patient-grouped cross-validated M on train.csv,
+and keeps the winner.
 
-If raw_signals/ is absent or unreadable the raw features are skipped and the
-pipeline degrades to given_sel rather than failing.
+  given      the 392 supplied columns only, cleaned and standardised (= v1).
+  given_sel  as above, then out-of-fold AUC ranking to the best columns (= v2).
+  raw        given_sel + features computed from raw_signals/ (= v3).
+  gam        raw, then a spline basis on the strongest features (= v4).
+
+The argument for this version is that the right answer depends on data we have
+not seen: how noisy the recordings are, how many patients there are, and
+whether the supplied columns already capture the atrial-activity signal. The
+argument against it is cost - it fits every candidate before choosing - and
+that selecting on CV M adds one more thing that can overfit. Its runtime is
+roughly the sum of versions 1-4, which measured well inside the 40-minute
+Kaggle budget.
+
+If raw_signals/ is absent or unreadable the raw candidates are skipped and the
+choice is made between the two given-column versions rather than failing.
 
 Disclosure (for report.pdf)
 ---------------------------
@@ -78,8 +88,7 @@ MIN_TPR_ELIGIBLE = 0.10             # below this the submission is not graded
 MIN_TPR_TARGET = 0.15               # our own safety margin above that
 MAX_FEATURE_DIM = 480               # spec requires d < 500
 
-DEFAULT_VARIANT = "raw"
-VARIANTS = ("given", "given_sel", "raw", "gam", "auto")
+CANDIDATES = ("given", "given_sel", "raw", "gam")
 
 N_FOLDS = 5
 WINSOR_Q = 0.001                    # clip features to train [0.1%, 99.9%]
@@ -908,16 +917,12 @@ def build_matrix(df, feature_cols, dataset_dir, raw_names, use_raw):
 
 
 def main():
-    if len(sys.argv) not in (4, 5):
+    if len(sys.argv) != 4:
         print("Usage: python3 part_c.py dataset_dir/ model.pkl "
-              "final_features.csv [variant]", file=sys.stderr)
+              "final_features.csv", file=sys.stderr)
         sys.exit(1)
 
     dataset_dir, model_path, final_features_path = sys.argv[1:4]
-    variant = sys.argv[4] if len(sys.argv) == 5 else DEFAULT_VARIANT
-    if variant not in VARIANTS:
-        raise ValueError(f"variant must be one of {VARIANTS}, got '{variant}'")
-
     np.random.seed(RANDOM_SEED)
 
     train_df = load_split(dataset_dir, "train")
@@ -936,13 +941,11 @@ def main():
     groups = (train_df["patient"].to_numpy() if "patient" in train_df.columns
               else np.arange(len(train_df)))
 
-    use_raw = variant in ("raw", "gam", "auto")
-    raw_names = _raw_feature_names() if use_raw else []
-    if use_raw and not (Path(dataset_dir) / "raw_signals").is_dir():
-        print("no raw_signals/ - falling back to variant 'given_sel'",
+    use_raw = (Path(dataset_dir) / "raw_signals").is_dir()
+    if not use_raw:
+        print("no raw_signals/ - choosing among the given-column versions only",
               file=sys.stderr)
-        use_raw, raw_names = False, []
-        variant = "given_sel" if variant != "auto" else "auto"
+    raw_names = _raw_feature_names() if use_raw else []
 
     X_train = build_matrix(train_df, feature_cols, dataset_dir, raw_names, use_raw)
     X_test = build_matrix(test_df, feature_cols, dataset_dir, raw_names, use_raw)
@@ -952,18 +955,17 @@ def main():
         X_val = build_matrix(val_df, feature_cols, dataset_dir, raw_names, use_raw)
         y_val = val_df["label"].to_numpy(dtype=np.int64)
 
-    if variant == "auto":
-        candidates = ["given", "given_sel"] + (["raw", "gam"] if use_raw else [])
-        best_variant, best_m = candidates[0], -np.inf
-        for cand in candidates:
-            state = fit_feature_map(X_train, y_train, groups, cand, n_given)
-            phi = apply_feature_map(X_train, state)
-            _, _, m = tune_hyperparameters(phi, y_train, groups)
-            print(f"[auto] {cand}: grouped-CV M = {m:.4f}", file=sys.stderr)
-            if m > best_m:
-                best_variant, best_m = cand, m
-        variant = best_variant
-        print(f"[auto] chose '{variant}'", file=sys.stderr)
+    candidates = [c for c in CANDIDATES
+                  if use_raw or c not in ("raw", "gam")]
+    variant, best_m = candidates[0], -np.inf
+    for cand in candidates:
+        state = fit_feature_map(X_train, y_train, groups, cand, n_given)
+        phi = apply_feature_map(X_train, state)
+        _, _, m = tune_hyperparameters(phi, y_train, groups)
+        print(f"[auto] {cand}: grouped-CV M = {m:.4f}", file=sys.stderr)
+        if m > best_m:
+            variant, best_m = cand, m
+    print(f"[auto] chose '{variant}'", file=sys.stderr)
 
     state = fit_feature_map(X_train, y_train, groups, variant, n_given)
     phi_train = apply_feature_map(X_train, state)
@@ -1002,7 +1004,7 @@ def main():
         pickle.dump({"weights": model.coef_[0].astype(np.float64),
                      "bias": float(model.intercept_[0]),
                      "threshold": float(threshold),
-                     "method": f"logreg[{variant}]"}, f)
+                     "method": f"logreg[v5-auto:{variant}]"}, f)
 
     phi_test = apply_feature_map(X_test, state)
     out = pd.DataFrame(phi_test,

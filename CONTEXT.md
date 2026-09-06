@@ -61,19 +61,34 @@ near-zero `G`, not a correctness issue (weights themselves match exactly).
 Run it with: `python verify_weights.py` (from `part2_logistic_regression/`, needs
 `drive_data/` present locally).
 
-### Part (c) — `part_c.py` — REWRITTEN, multi-variant, validated on synthetic data
-Self-contained (submission is one file). Five selectable feature variants, chosen by
-an optional 4th CLI arg (`python3 part_c.py dataset_dir/ model.pkl
-final_features.csv [variant]`); the graded 3-arg form still works and uses the
-default, `raw`:
+### Part (c) — five separate versions in `variants/`, validated on synthetic data
+The submission is a single file, so each version is **complete and self-contained**;
+you pick one by copying it over the top-level `part_c.py`. See
+`part2_logistic_regression/variants/README.md` for the full comparison.
 
-| variant | phi(x) |
-|---|---|
-| `given` | the 392 supplied columns, cleaned |
-| `given_sel` | + out-of-fold AUC ranking down to the best columns |
-| `raw` (default) | + features computed from `raw_signals/` |
-| `gam` | + spline basis expansion of the strongest features |
-| `auto` | scores the four by patient-grouped CV and keeps the winner |
+| # | file | phi(x) | synthetic test M |
+|---|---|---|---|
+| 1 | `part_c_v1_baseline.py` | the 392 supplied columns, cleaned | -0.21 |
+| 2 | `part_c_v2_selected.py` | + out-of-fold AUC ranking to the best 220 | -0.44 |
+| 3 | `part_c_v3_raw.py` | + features computed from `raw_signals/` | **1.00** |
+| 4 | `part_c_v4_gam.py` | + cubic-spline basis on the 45 strongest | **1.00** |
+| 5 | `part_c_v5_auto.py` | picks among 1-4 by patient-grouped CV | **1.00** |
+
+Top-level `part_c.py` is currently the multi-variant build (defaults to `raw`, and
+still accepts an optional 4th arg to switch); `variants/part_c_v3_raw.py` is the
+same strategy as a clean single-purpose file. Swap in a version with
+`cp variants/part_c_v3_raw.py part_c.py`.
+
+**Excluded patients.** Per the course announcement (validation looks unexpectedly
+poor "particularly for patient 051 in val.csv and 045 in train.csv"), all six files
+define `EXCLUDE_PATIENTS = ("045", "051")`, dropped from **training and threshold
+selection only** — never from `test.csv`, where every row must still be scored. ID
+matching is format-tolerant (`45`, `"045"`, `"P045"`, `"patient_045"` all match;
+unit-tested). Set the tuple to `()` to keep them. Note the asymmetry: dropping 045
+from *training* is explicitly invited by the assignment's "noisy patients" section,
+but dropping 051 from *val* tunes the threshold on an easier distribution than the
+private test set, which at 100x per false positive is the expensive direction to be
+wrong in — worth comparing both ways before submitting.
 
 Raw-signal features (the part that earns marks) re-implement published AF detectors:
 Pan-Tompkins QRS detection; RR irregularity (COSEn of Lake & Moorman, symbolic-

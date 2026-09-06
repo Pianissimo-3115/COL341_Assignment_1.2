@@ -1,7 +1,7 @@
 """
-COL774 Assignment 1 - Part 2(c): Feature engineering for AF detection.
+COL774 Assignment 1 - Part 2(c), VERSION 3: raw-signal ECG features.
 
-    python3 part_c.py dataset_dir/ model.pkl final_features.csv [variant]
+    python3 part_c.py dataset_dir/ model.pkl final_features.csv
 
 `dataset_dir` holds train.csv / val.csv / test.csv (release_id, patient, label,
 392 feature columns) and raw_signals/{patient}.npz (release_id, signal). The
@@ -32,17 +32,34 @@ before calling AF":
   * patient-grouped CV everywhere, since rows from one patient are highly
     correlated and ungrouped folds would badly over-estimate performance.
 
-Feature variants (4th argument, default "raw")
-----------------------------------------------
-  given      the 392 supplied columns only, cleaned and standardised.
-  given_sel  as above, then out-of-fold AUC ranking down to the best columns.
-  raw        given_sel + features computed from raw_signals/ (default).
-  gam        raw, then a spline basis expansion of the strongest features, so
-             the linear model can fit monotone-but-curved effects.
-  auto       score the four above by patient-grouped CV and keep the winner.
+What this version adds over versions 1 and 2
+--------------------------------------------
+Versions 1 and 2 only reshuffle the 392 supplied columns. This one goes back to
+raw_signals/ and computes its own features, which is where the marks are: the
+supplied columns come from the published Goodfellow/ecg-features library and
+are dominated by RR/HRV statistics, so they largely miss the *other* defining
+sign of AF - the loss of organised atrial activity - and they cannot tell a
+genuinely irregular rhythm from a noisy recording.
 
-If raw_signals/ is absent or unreadable the raw features are skipped and the
-pipeline degrades to given_sel rather than failing.
+The added features re-implement published, openly described methods:
+
+  * Pan-Tompkins QRS detection, then RR-irregularity measures: COSEn (Lake &
+    Moorman), symbolic-dynamics Shannon entropy (Zhou et al.), Lorenz-plot dRR
+    occupancy (Sarkar et al.), Poincare SD1/SD2, turning-point ratio.
+  * Atrial activity via zero-padding QRST cancellation: subtract an average
+    beat at every R peak, then measure P-wave amplitude and beat-to-beat
+    reproducibility, and the 4-9 Hz fibrillatory-wave band power in the TQ
+    intervals where atrial activity is unobscured.
+  * Signal-quality descriptors, which exist specifically to prevent false
+    positives: noise causes spurious QRS detections, which look exactly like
+    the irregular RR series that means AF. At 100x cost per false positive,
+    letting the model see that a recording is untrustworthy matters more than
+    any classifier tweak.
+
+The selected columns are then ranked down to SELECT_DIMS as in version 2.
+
+If raw_signals/ is absent or unreadable the raw features are skipped and this
+degrades to version 2's behaviour rather than failing.
 
 Disclosure (for report.pdf)
 ---------------------------
@@ -66,7 +83,6 @@ from scipy import signal as sps
 from scipy import stats as spstats
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
-from sklearn.preprocessing import SplineTransformer
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -78,14 +94,9 @@ MIN_TPR_ELIGIBLE = 0.10             # below this the submission is not graded
 MIN_TPR_TARGET = 0.15               # our own safety margin above that
 MAX_FEATURE_DIM = 480               # spec requires d < 500
 
-DEFAULT_VARIANT = "raw"
-VARIANTS = ("given", "given_sel", "raw", "gam", "auto")
-
 N_FOLDS = 5
 WINSOR_Q = 0.001                    # clip features to train [0.1%, 99.9%]
 SELECT_DIMS = 220                   # columns kept by the AUC ranking
-GAM_TOP_K = 45                      # features given a spline basis in "gam"
-GAM_N_KNOTS = 5
 C_GRID = (0.003, 0.01, 0.03, 0.1, 0.3, 1.0)
 CLASS_WEIGHT_GRID = (None, "balanced")
 THRESHOLD_TOLERANCE = 0.01          # give up this much M to gain FP headroom
@@ -811,55 +822,20 @@ def theoretical_threshold(y_true):
 # --------------------------------------------------------------------------
 # Feature map: fit on train, then applied unchanged everywhere
 # --------------------------------------------------------------------------
-def fit_feature_map(X_raw, y, groups, variant, n_given):
+def fit_feature_map(X_raw, y, groups):
     """Returns the fitted phi. `X_raw` is the concatenation of the given
-    columns and (when available) the raw-signal columns; `n_given` says where
-    the split is, so the given-only variants stay given-only even when raw
-    columns were extracted for a different candidate."""
-    base_cols = (np.arange(n_given) if variant in ("given", "given_sel")
-                 else np.arange(X_raw.shape[1]))
-    X_raw = X_raw[:, base_cols]
-    state = {"variant": variant, "base_cols": base_cols,
-             "prep": fit_preprocessor(X_raw)}
+    columns and (when available) the raw-signal columns."""
+    state = {"prep": fit_preprocessor(X_raw)}
     X = apply_preprocessor(X_raw, state["prep"])
-
-    if variant == "given":
-        state["keep"] = np.arange(X.shape[1])
-        state["spline"] = None
-        return state
-
     ranking = rank_features(X, y, groups)
-    order = np.argsort(-ranking)
-    n_keep = min(SELECT_DIMS, X.shape[1])
-    keep = np.sort(order[:n_keep])
-    state["keep"] = keep
     state["ranking"] = ranking
-    state["spline"] = None
-
-    if variant == "gam":
-        # Spline-expand the strongest columns, keeping the rest linear. The
-        # model stays linear in phi(x) - it just gets a richer basis.
-        top = np.sort(order[:min(GAM_TOP_K, X.shape[1])])
-        spline = SplineTransformer(n_knots=GAM_N_KNOTS, degree=3,
-                                   include_bias=False)
-        spline.fit(X[:, top])
-        width = spline.transform(X[:1, top]).shape[1]
-        if keep.size + width > MAX_FEATURE_DIM:
-            n_keep = max(0, MAX_FEATURE_DIM - width)
-            keep = np.sort(order[:n_keep])
-            state["keep"] = keep
-        state["spline"] = spline
-        state["spline_cols"] = top
+    state["keep"] = np.sort(np.argsort(-ranking)[:min(SELECT_DIMS, X.shape[1])])
     return state
 
 
 def apply_feature_map(X_raw, state):
-    X = apply_preprocessor(X_raw[:, state["base_cols"]], state["prep"])
-    parts = [X[:, state["keep"]]]
-    if state.get("spline") is not None:
-        parts.append(state["spline"].transform(X[:, state["spline_cols"]]))
-    phi = np.hstack(parts) if len(parts) > 1 else parts[0]
-    return np.nan_to_num(phi, nan=0.0, posinf=0.0, neginf=0.0)
+    X = apply_preprocessor(X_raw, state["prep"])
+    return np.nan_to_num(X[:, state["keep"]], nan=0.0, posinf=0.0, neginf=0.0)
 
 
 # --------------------------------------------------------------------------
@@ -908,16 +884,12 @@ def build_matrix(df, feature_cols, dataset_dir, raw_names, use_raw):
 
 
 def main():
-    if len(sys.argv) not in (4, 5):
+    if len(sys.argv) != 4:
         print("Usage: python3 part_c.py dataset_dir/ model.pkl "
-              "final_features.csv [variant]", file=sys.stderr)
+              "final_features.csv", file=sys.stderr)
         sys.exit(1)
 
     dataset_dir, model_path, final_features_path = sys.argv[1:4]
-    variant = sys.argv[4] if len(sys.argv) == 5 else DEFAULT_VARIANT
-    if variant not in VARIANTS:
-        raise ValueError(f"variant must be one of {VARIANTS}, got '{variant}'")
-
     np.random.seed(RANDOM_SEED)
 
     train_df = load_split(dataset_dir, "train")
@@ -931,18 +903,15 @@ def main():
     val_df = drop_excluded_patients(val_df, "val.csv")
 
     feature_cols = get_feature_columns(train_df)
-    n_given = len(feature_cols)
     y_train = train_df["label"].to_numpy(dtype=np.int64)
     groups = (train_df["patient"].to_numpy() if "patient" in train_df.columns
               else np.arange(len(train_df)))
 
-    use_raw = variant in ("raw", "gam", "auto")
-    raw_names = _raw_feature_names() if use_raw else []
-    if use_raw and not (Path(dataset_dir) / "raw_signals").is_dir():
-        print("no raw_signals/ - falling back to variant 'given_sel'",
+    use_raw = (Path(dataset_dir) / "raw_signals").is_dir()
+    if not use_raw:
+        print("no raw_signals/ - this version degrades to given-columns-only",
               file=sys.stderr)
-        use_raw, raw_names = False, []
-        variant = "given_sel" if variant != "auto" else "auto"
+    raw_names = _raw_feature_names() if use_raw else []
 
     X_train = build_matrix(train_df, feature_cols, dataset_dir, raw_names, use_raw)
     X_test = build_matrix(test_df, feature_cols, dataset_dir, raw_names, use_raw)
@@ -952,27 +921,17 @@ def main():
         X_val = build_matrix(val_df, feature_cols, dataset_dir, raw_names, use_raw)
         y_val = val_df["label"].to_numpy(dtype=np.int64)
 
-    if variant == "auto":
-        candidates = ["given", "given_sel"] + (["raw", "gam"] if use_raw else [])
-        best_variant, best_m = candidates[0], -np.inf
-        for cand in candidates:
-            state = fit_feature_map(X_train, y_train, groups, cand, n_given)
-            phi = apply_feature_map(X_train, state)
-            _, _, m = tune_hyperparameters(phi, y_train, groups)
-            print(f"[auto] {cand}: grouped-CV M = {m:.4f}", file=sys.stderr)
-            if m > best_m:
-                best_variant, best_m = cand, m
-        variant = best_variant
-        print(f"[auto] chose '{variant}'", file=sys.stderr)
-
-    state = fit_feature_map(X_train, y_train, groups, variant, n_given)
+    state = fit_feature_map(X_train, y_train, groups)
     phi_train = apply_feature_map(X_train, state)
     if phi_train.shape[1] >= 500:
         raise RuntimeError(f"phi has {phi_train.shape[1]} dims, spec needs < 500")
 
+    all_names = feature_cols + raw_names
+    top = [all_names[j] for j in np.argsort(-state["ranking"])[:5]]
     c, class_weight, cv_m = tune_hyperparameters(phi_train, y_train, groups)
-    print(f"variant={variant} d={phi_train.shape[1]} C={c} "
+    print(f"[v3 raw] d={phi_train.shape[1]}/{X_train.shape[1]} C={c} "
           f"class_weight={class_weight} grouped-CV M={cv_m:.4f}", file=sys.stderr)
+    print(f"top features: {', '.join(top)}", file=sys.stderr)
 
     model = make_model(c, class_weight)
     with warnings.catch_warnings():
@@ -1002,7 +961,7 @@ def main():
         pickle.dump({"weights": model.coef_[0].astype(np.float64),
                      "bias": float(model.intercept_[0]),
                      "threshold": float(threshold),
-                     "method": f"logreg[{variant}]"}, f)
+                     "method": "logreg[v3-raw]"}, f)
 
     phi_test = apply_feature_map(X_test, state)
     out = pd.DataFrame(phi_test,
