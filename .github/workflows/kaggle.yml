@@ -1,0 +1,78 @@
+name: Update Kaggle Dataset
+
+# Mirrors the code in this repo to a Kaggle dataset on every push, so the
+# Kaggle notebook that runs against the private competition data always has
+# the latest version. Same approach as COL341_assignment_1, with two changes
+# forced by this repo:
+#   * this repo's default branch is `master`, not `main`;
+#   * the code lives under part2_logistic_regression/, and the Kaggle CLI
+#     *skips directories by default* (--dir-mode defaults to "skip"), so
+#     uploading the repo root would silently publish nothing but the top-level
+#     files. The Stage step therefore flattens the files we want into one
+#     directory and uploads that.
+#
+# Staging explicitly is also what keeps the assignment PDF and the datasets in
+# drive_data/ off Kaggle: only the files listed below are ever uploaded.
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:        # lets you trigger a sync by hand from the Actions tab
+
+jobs:
+  update-kaggle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Kaggle CLI
+        run: pip install kaggle
+
+      - name: Configure Kaggle authentication
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          if [ -z "${KAGGLE_API_TOKEN:-}" ]; then
+            echo "::error::KAGGLE_API_TOKEN is not set on this repository."
+            echo "Add it with:  gh secret set KAGGLE_API_TOKEN --repo Pianissimo-3115/COL341_Assignment_1.2 < kaggle.json"
+            exit 1
+          fi
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_API_TOKEN" > ~/.kaggle/access_token
+          chmod 600 ~/.kaggle/access_token
+
+      - name: Stage code for upload
+        run: |
+          set -euo pipefail
+          mkdir -p kaggle_upload
+          cp dataset-metadata.json kaggle_upload/
+
+          # Submission files and the five Part (c) versions, flattened.
+          cd part2_logistic_regression
+          cp part_a.py part_b.py part_c.py verify_weights.py ../kaggle_upload/
+          cp variants/part_c_v*.py ../kaggle_upload/
+          cp dev/make_synthetic_partc_data.py dev/partc_report.py ../kaggle_upload/
+          cp COMMANDS.md ../kaggle_upload/
+          cp variants/README.md ../kaggle_upload/VERSIONS.md
+          cd ..
+
+          echo "Staged for Kaggle:"
+          ls -la kaggle_upload
+          # Fail loudly rather than publishing a near-empty dataset.
+          test "$(ls kaggle_upload/*.py | wc -l)" -ge 9
+
+      - name: Push to Kaggle
+        run: |
+          set -euo pipefail
+          DATASET_ID=$(python -c "import json;print(json.load(open('dataset-metadata.json'))['id'])")
+          if kaggle datasets status "$DATASET_ID" >/dev/null 2>&1; then
+            echo "Dataset $DATASET_ID exists - pushing a new version."
+            kaggle datasets version -p kaggle_upload -r zip \
+              -m "Updated from GitHub commit ${{ github.sha }}"
+          else
+            echo "Dataset $DATASET_ID not found - creating it (private by default)."
+            kaggle datasets create -p kaggle_upload -r zip
+          fi

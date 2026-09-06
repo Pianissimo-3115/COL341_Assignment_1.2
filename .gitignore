@@ -29,3 +29,6 @@ temp
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Kaggle upload staging dir (built by .github/workflows/kaggle.yml)
+kaggle_upload/
