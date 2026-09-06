@@ -12,6 +12,30 @@ python3 part_c.py dataset_dir/ model.pkl final_features.csv
 Every version takes the same three arguments, writes the same two outputs, and
 is scored the same way: `sigmoid(phi(x) . weights + bias) >= threshold`.
 
+## Commands
+
+Run from `part2_logistic_regression/`. Use `python` locally — `python3` resolves
+to the Windows Store stub on this machine.
+
+```bash
+python variants/part_c_v1_baseline.py dataset_dir/ model_v1.pkl final_features_v1.csv
+python variants/part_c_v2_selected.py dataset_dir/ model_v2.pkl final_features_v2.csv
+python variants/part_c_v3_raw.py      dataset_dir/ model_v3.pkl final_features_v3.csv
+python variants/part_c_v4_gam.py      dataset_dir/ model_v4.pkl final_features_v4.csv
+python variants/part_c_v5_auto.py     dataset_dir/ model_v5.pkl final_features_v5.csv
+```
+
+Compare them on val, then build the Kaggle submission from the winner:
+
+```bash
+python dev/partc_report.py dataset_dir/ report_out/ raw   # table (iv) = val metrics
+python drive_data/partc_kaggle.py model_v3.pkl final_features_v3.csv submission.csv
+```
+
+See [`../COMMANDS.md`](../COMMANDS.md) for the full reference, including Parts
+(a) and (b), the synthetic-data workflow, and a trap in `evaluate_partc.py` that
+silently reports `M = 0.0000` when the feature rows do not match the label rows.
+
 | # | file | phi(x) | when it wins |
 |---|---|---|---|
 | 1 | `part_c_v1_baseline.py` | the 392 supplied columns, cleaned | few training patients; the supplied columns already separate the classes |
